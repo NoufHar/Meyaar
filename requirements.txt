@@ -27,3 +27,12 @@ faiss-cpu
 # App / utilities
 streamlit
 python-dotenv
+
+# Database / PostGIS
+SQLAlchemy
+psycopg2-binary
+geoalchemy2
+
+# Geospatial file I/O
+pyogrio
+pyarrow
