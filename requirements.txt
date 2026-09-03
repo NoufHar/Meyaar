@@ -1,0 +1,29 @@
+# Core data science
+numpy
+pandas
+scikit-learn
+matplotlib
+jupyter
+
+# Geospatial
+geopandas
+shapely
+pyproj
+
+# ML
+xgboost
+torch
+transformers
+accelerate
+datasets
+
+# Vision / images
+Pillow
+
+# RAG / embeddings
+sentence-transformers
+faiss-cpu
+
+# App / utilities
+streamlit
+python-dotenv
