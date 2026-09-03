@@ -1,5 +1,11 @@
-from database import create_db_engine, connect_to_db
-from insertion import insert_vector_data
+from src.insertion.database import (
+    create_db_engine,
+    connect_to_db,
+)
+
+from src.insertion.insertion import (
+    insert_vector_data,
+)
 
 
 engine = create_db_engine()
