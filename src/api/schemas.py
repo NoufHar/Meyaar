@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -32,3 +32,16 @@ class VisionAnalysisResponse(BaseModel):
     status: Literal["completed"] = "completed"
     elements: list[MapElementResult]
     issues: list[VisionIssue]
+
+
+class VectorProcessingResponse(BaseModel):
+    filename: str
+    status: Literal["completed"]
+    layer_name: Literal[
+        "roads",
+        "buildings",
+    ]
+    run_id: str
+    insertion: dict[str, Any]
+    validation: dict[str, Any]
+    analysis: dict[str, Any]

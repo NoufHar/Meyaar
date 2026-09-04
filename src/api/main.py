@@ -1,8 +1,19 @@
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
 
-from src.api.schemas import ImageInspectionResponse, VisionAnalysisResponse
+from src.api.schemas import (
+    ImageInspectionResponse,
+    VectorProcessingResponse,
+    VisionAnalysisResponse,
+)
+
 from src.vision.image_loader import InvalidImageError, inspect_image
 
 from src.vision.vision_model import (
@@ -13,6 +24,12 @@ from src.vision.vision_model import (
 from src.vision.vision_pipeline import run_vision_pipeline
 
 from agent.api.router import router as analysis_router
+
+from src.api.vector_pipeline import (
+    InvalidVectorFileError,
+    VectorProcessingError,
+    process_vector_upload,
+)
 
 
 app = FastAPI(
@@ -126,5 +143,58 @@ async def analyze_uploaded_image(file: UploadFile = File(...)):
     except VisionModelServiceError as error:
         raise HTTPException(
             status_code=502,
+            detail=str(error),
+        ) from error
+
+
+
+MAX_VECTOR_SIZE = 100 * 1024 * 1024
+
+
+@app.post(
+    "/vectors/process",
+    response_model=VectorProcessingResponse,
+)
+async def process_uploaded_vector(
+    file: UploadFile = File(...),
+    layer_type: str | None = Form(None),
+):
+    filename = file.filename or ""
+
+    content = await file.read(
+        MAX_VECTOR_SIZE + 1
+    )
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is empty.",
+        )
+
+    if len(content) > MAX_VECTOR_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "The vector file exceeds "
+                "the 100 MB limit."
+            ),
+        )
+
+    try:
+        return process_vector_upload(
+            filename=filename,
+            content=content,
+            requested_layer=layer_type,
+        )
+
+    except InvalidVectorFileError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+    except VectorProcessingError as error:
+        raise HTTPException(
+            status_code=500,
             detail=str(error),
         ) from error
