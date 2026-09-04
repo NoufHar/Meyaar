@@ -2,9 +2,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
-from src.api.schemas import ImageInspectionResponse
+from src.api.schemas import ImageInspectionResponse, VisionAnalysisResponse
 from src.vision.image_loader import InvalidImageError, inspect_image
 
+from src.vision.vision_model import VisionModelNotConfiguredError
+from src.vision.vision_pipeline import run_vision_pipeline
 
 app = FastAPI(
     title="Meyaar Backend API",
@@ -65,3 +67,46 @@ async def inspect_uploaded_image(file: UploadFile = File(...)):
         size_bytes=len(content),
         **metadata,
     )
+
+
+
+@app.post("/images/analyze", response_model=VisionAnalysisResponse)
+async def analyze_uploaded_image(file: UploadFile = File(...)):
+    filename = file.filename or ""
+    extension = Path(filename).suffix.lower()
+
+    if extension not in SUPPORTED_IMAGE_EXTENSIONS:
+        raise HTTPException(
+            status_code=415,
+            detail="Supported formats: JPG, JPEG, PNG, TIF, and TIFF.",
+        )
+
+    content = await file.read(MAX_IMAGE_SIZE + 1)
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="The uploaded file is empty.",
+        )
+
+    if len(content) > MAX_IMAGE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail="The image exceeds the 25 MB limit.",
+        )
+
+    try:
+        inspect_image(content)
+        return run_vision_pipeline(filename, content)
+
+    except InvalidImageError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error),
+        ) from error
+
+    except VisionModelNotConfiguredError as error:
+        raise HTTPException(
+            status_code=503,
+            detail=str(error),
+        ) from error
