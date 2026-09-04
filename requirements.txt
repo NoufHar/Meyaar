@@ -36,3 +36,17 @@ geoalchemy2
 # Geospatial file I/O
 pyogrio
 pyarrow
+
+
+fastapi
+uvicorn[standard]
+python-multipart
+pytest
+httpx
+
+
+moondream
+
+langgraph>=1.2
+langchain-openai>=1.3
+langchain-core>=0.3
