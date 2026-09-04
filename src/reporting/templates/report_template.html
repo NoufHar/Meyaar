@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <title>
+        Meyaar Geospatial Data Quality Assessment
+    </title>
+
+    <style>
+        :root {
+            --navy: #062B4F;
+            --teal: #14B8A6;
+            --dark-teal: #0F8F83;
+            --light-teal: #E8F7F5;
+            --text: #243447;
+            --muted: #6B7C8F;
+            --border: #DDE7EA;
+            --white: #FFFFFF;
+            --background: #F8FBFC;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            color: var(--text);
+            background: var(--white);
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .report-header {
+            background: var(--navy);
+            color: white;
+            padding: 28px 30px 24px;
+            border-bottom: 6px solid var(--teal);
+            margin-bottom: 24px;
+        }
+
+        .brand {
+            font-size: 28px;
+            font-weight: 700;
+            letter-spacing: 2px;
+        }
+
+        .report-title {
+            margin-top: 7px;
+            font-size: 15px;
+        }
+
+        .run-id {
+            margin-top: 8px;
+            font-size: 10px;
+            opacity: 0.8;
+        }
+
+        .section {
+            margin-bottom: 26px;
+            page-break-inside: avoid;
+        }
+
+        h2 {
+            color: var(--navy);
+            font-size: 18px;
+            margin: 0 0 14px;
+            padding-bottom: 7px;
+            border-bottom: 2px solid var(--teal);
+        }
+
+        p {
+            margin: 7px 0;
+        }
+
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin: 16px 0;
+        }
+
+        .metric {
+            border: 1px solid var(--border);
+            border-top: 4px solid var(--teal);
+            border-radius: 6px;
+            padding: 14px;
+            background: var(--white);
+        }
+
+        .metric-value {
+            color: var(--navy);
+            font-size: 22px;
+            font-weight: bold;
+        }
+
+        .metric-label {
+            color: var(--muted);
+            font-size: 10px;
+            margin-top: 3px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th {
+            background: var(--navy);
+            color: white;
+            padding: 9px;
+            text-align: left;
+            font-size: 10px;
+        }
+
+        td {
+            padding: 9px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #F7FAFB;
+        }
+
+        .status-review {
+            color: var(--dark-teal);
+            font-weight: 700;
+        }
+
+        .note {
+            background: var(--light-teal);
+            border-left: 4px solid var(--teal);
+            padding: 12px 14px;
+            margin: 12px 0;
+            border-radius: 3px;
+        }
+
+        .chart-box {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            margin: 12px 0;
+            background: white;
+        }
+
+        .chart-image {
+            width: 100%;
+            display: block;
+        }
+
+        .map-placeholder {
+            border: 2px dashed var(--teal);
+            background: var(--background);
+            border-radius: 6px;
+            padding: 28px;
+            text-align: center;
+        }
+
+        .map-title {
+            color: var(--navy);
+            font-size: 15px;
+            font-weight: bold;
+            margin-bottom: 7px;
+        }
+
+        .map-text {
+            color: var(--muted);
+            font-size: 11px;
+        }
+
+        .footer-note {
+            border-top: 1px solid var(--border);
+            margin-top: 25px;
+            padding-top: 10px;
+            font-size: 9px;
+            color: var(--muted);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="report-header">
+        <div class="brand">
+            MEYAAR
+        </div>
+
+        <div class="report-title">
+            Geospatial Data Quality Assessment Report
+        </div>
+
+        <div class="run-id">
+            Validation Run:
+            {{ validation.run_id }}
+        </div>
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 1. EXECUTIVE SUMMARY -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            1. Executive Summary
+        </h2>
+
+        <div class="metrics">
+
+            <div class="metric">
+                <div class="metric-value">
+                    {{ "{:,}".format(
+                        dataset.feature_count
+                    ) }}
+                </div>
+
+                <div class="metric-label">
+                    Features Analyzed
+                </div>
+            </div>
+
+            <div class="metric">
+                <div class="metric-value">
+                    {{ "{:,}".format(
+                        validation.total_findings
+                    ) }}
+                </div>
+
+                <div class="metric-label">
+                    Candidate Findings
+                </div>
+            </div>
+
+            <div class="metric">
+                <div class="metric-value">
+                    {{ validation.summary | length }}
+                </div>
+
+                <div class="metric-label">
+                    Rules With Findings
+                </div>
+            </div>
+
+        </div>
+
+        <p>
+            {{ report.executive_summary }}
+        </p>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 2. DATASET INFORMATION -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            2. Dataset Information
+        </h2>
+
+        <table>
+            <tbody>
+
+                <tr>
+                    <th>Dataset</th>
+                    <td>
+                        {{ dataset.file_name }}
+                    </td>
+                </tr>
+
+                <tr>
+                    <th>Layer Type</th>
+                    <td>
+                        {{ dataset.layer_type }}
+                    </td>
+                </tr>
+
+                <tr>
+                    <th>Feature Count</th>
+                    <td>
+                        {{ "{:,}".format(
+                            dataset.feature_count
+                        ) }}
+                    </td>
+                </tr>
+
+                <tr>
+                    <th>CRS</th>
+                    <td>
+                        {{ dataset.crs }}
+                    </td>
+                </tr>
+
+                <tr>
+                    <th>Validation Run ID</th>
+                    <td>
+                        {{ validation.run_id }}
+                    </td>
+                </tr>
+
+            </tbody>
+        </table>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 3. QUALITY SUMMARY -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            3. Quality Assessment Summary
+        </h2>
+
+        {% if quality_summary %}
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Quality Dimension</th>
+                    <th>Candidate Findings</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                {% for row in quality_summary %}
+
+                <tr>
+
+                    <td>
+                        {{ row.dimension }}
+                    </td>
+
+                    <td>
+                        {{ "{:,}".format(
+                            row.findings
+                        ) }}
+                    </td>
+
+                    <td class="status-review">
+                        {{ row.status }}
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+        {% else %}
+
+        <div class="note">
+            No quality findings were reported.
+        </div>
+
+        {% endif %}
+
+        <p>
+            {{ report.quality_assessment_summary }}
+        </p>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 4. RULE RESULTS -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            4. Validation Rules & Results
+        </h2>
+
+        {% if rule_rows %}
+
+        <table>
+
+            <thead>
+                <tr>
+                    <th>Rule</th>
+                    <th>Quality Dimension</th>
+                    <th>Finding Type</th>
+                    <th>Severity</th>
+                    <th>Count</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+
+            <tbody>
+
+                {% for row in rule_rows %}
+
+                <tr>
+
+                    <td>
+                        {{ row.rule_id }}
+                    </td>
+
+                    <td>
+                        {{ row.quality_dimension }}
+                    </td>
+
+                    <td>
+                        {{ row.finding_type }}
+                    </td>
+
+                    <td>
+                        {{ row.severity }}
+                    </td>
+
+                    <td>
+                        {{ "{:,}".format(
+                            row.findings
+                        ) }}
+                    </td>
+
+                    <td class="status-review">
+                        {{ row.status }}
+                    </td>
+
+                </tr>
+
+                {% endfor %}
+
+            </tbody>
+
+        </table>
+
+        {% else %}
+
+        <div class="note">
+            No rules reported findings.
+        </div>
+
+        {% endif %}
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 5. VISUAL ANALYTICS -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            5. Visual Analytics
+        </h2>
+
+        {% if findings_chart_uri %}
+
+        <div class="chart-box">
+            <img
+                class="chart-image"
+                src="{{ findings_chart_uri }}"
+                alt="Candidate Findings by Rule"
+            >
+        </div>
+
+        {% endif %}
+
+
+        {% if quality_chart_uri %}
+
+        <div class="chart-box">
+            <img
+                class="chart-image"
+                src="{{ quality_chart_uri }}"
+                alt="Candidate Findings by Quality Dimension"
+            >
+        </div>
+
+        {% endif %}
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 6. DETAILED FINDINGS -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            6. Detailed Findings
+        </h2>
+
+        <p>
+            {{ report.detailed_findings }}
+        </p>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 7. SPATIAL DISTRIBUTION -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            7. Spatial Distribution of Issues
+        </h2>
+
+        {% if map_snapshot_uri %}
+
+        <div class="chart-box">
+            <img
+                class="chart-image"
+                src="{{ map_snapshot_uri }}"
+                alt="Interactive Map Snapshot"
+            >
+        </div>
+
+        <p>
+            Snapshot from the Meyaar interactive map
+            for this validation run.
+        </p>
+
+        {% else %}
+
+        <div class="map-placeholder">
+
+            <div class="map-title">
+                Interactive Map Snapshot
+            </div>
+
+            <div class="map-text">
+                Spatial visualization will be added
+                automatically from the Meyaar interactive
+                map after frontend integration.
+            </div>
+
+        </div>
+
+        {% endif %}
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 8. ACTIONS -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            8. Actions Taken
+        </h2>
+
+        <p>
+            {{ report.actions_taken }}
+        </p>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 9. REVALIDATION -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            9. Re-validation & Improvement
+        </h2>
+
+        <p>
+            {{ report.revalidation_improvement }}
+        </p>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 10. RECOMMENDATIONS -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            10. Recommendations
+        </h2>
+
+        <p>
+            {{ report.recommendations }}
+        </p>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 11. METHODOLOGY -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            11. Assessment Methodology
+        </h2>
+
+        <p>
+            {{ report.assessment_methodology }}
+        </p>
+
+    </div>
+
+
+    <!-- ================================================== -->
+    <!-- 12. DISCLAIMER -->
+    <!-- ================================================== -->
+
+    <div class="section">
+
+        <h2>
+            12. Standards Alignment & Disclaimer
+        </h2>
+
+        <div class="note">
+            {{ report.standards_alignment_disclaimer }}
+        </div>
+
+        <p>
+            Meyaar provides an automated geospatial
+            data-quality assessment designed to support
+            evaluation against relevant geospatial quality
+            requirements. Meyaar results do not constitute
+            official GeoSA certification or approval.
+        </p>
+
+    </div>
+
+
+    <div class="footer-note">
+        MEYAAR · Geospatial Data Quality Assessment
+    </div>
+
+</body>
+
+</html>
