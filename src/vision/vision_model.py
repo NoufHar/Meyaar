@@ -1,5 +1,6 @@
 import os
 from functools import lru_cache
+from urllib.error import HTTPError, URLError
 
 import moondream as md
 from dotenv import load_dotenv
@@ -30,6 +31,10 @@ ELEMENT_QUESTIONS = {
 
 
 class VisionModelNotConfiguredError(RuntimeError):
+    pass
+
+
+class VisionModelServiceError(RuntimeError):
     pass
 
 
@@ -69,14 +74,26 @@ def analyze_image(image: Image.Image) -> dict:
     issues = []
 
     for element, question in ELEMENT_QUESTIONS.items():
-        result = model.query(
-            image,
-            question,
-            settings={
-                "temperature": 0.0,
-                "max_tokens": 4,
-            },
-        )
+        try:
+            result = model.query(
+                image=image,
+                question=question,
+                settings={
+                    "temperature": 0.0,
+                    "max_tokens": 4,
+                },
+            )
+
+        except HTTPError as error:
+            raise VisionModelServiceError(
+                f"Moondream request failed "
+                f"with HTTP {error.code}."
+            ) from error
+
+        except (URLError, TimeoutError) as error:
+            raise VisionModelServiceError(
+                "Could not connect to Moondream."
+            ) from error
 
         answer = normalize_answer(
             result.get("answer", "")
@@ -96,8 +113,9 @@ def analyze_image(image: Image.Image) -> dict:
                 "error_type": f"missing_{element}",
                 "severity": "warning",
                 "message": (
-                    f"The map does not contain "
-                    f"a detectable {element.replace('_', ' ')}."
+                    "The map does not contain "
+                    f"a detectable "
+                    f"{element.replace('_', ' ')}."
                 ),
                 "confidence": None,
             })

@@ -5,7 +5,11 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from src.api.schemas import ImageInspectionResponse, VisionAnalysisResponse
 from src.vision.image_loader import InvalidImageError, inspect_image
 
-from src.vision.vision_model import VisionModelNotConfiguredError
+from src.vision.vision_model import (
+    VisionModelNotConfiguredError,
+    VisionModelServiceError,
+)
+
 from src.vision.vision_pipeline import run_vision_pipeline
 
 from agent.api.router import router as analysis_router
@@ -116,5 +120,11 @@ async def analyze_uploaded_image(file: UploadFile = File(...)):
     except VisionModelNotConfiguredError as error:
         raise HTTPException(
             status_code=503,
+            detail=str(error),
+        ) from error
+
+    except VisionModelServiceError as error:
+        raise HTTPException(
+            status_code=502,
             detail=str(error),
         ) from error

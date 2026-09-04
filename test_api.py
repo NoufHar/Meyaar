@@ -118,3 +118,40 @@ def test_analyze_image_endpoint(
     assert result["issues"][0]["error_type"] == (
         "missing_title"
     )
+
+
+
+def test_analyze_returns_502_when_moondream_fails(
+    monkeypatch,
+):
+    from src.vision.vision_model import (
+        VisionModelServiceError,
+    )
+
+    def failing_pipeline(filename, content):
+        raise VisionModelServiceError(
+            "Could not connect to Moondream."
+        )
+
+    monkeypatch.setattr(
+        "src.api.main.run_vision_pipeline",
+        failing_pipeline,
+    )
+
+    response = client.post(
+        "/images/analyze",
+        files={
+            "file": (
+                "map.png",
+                create_png(),
+                "image/png",
+            )
+        },
+    )
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "detail": (
+            "Could not connect to Moondream."
+        )
+    }
