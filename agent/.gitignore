@@ -1,0 +1,6 @@
+# Local caches / env for the agent package (repo-wide .gitignore also applies)
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env

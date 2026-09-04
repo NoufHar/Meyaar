@@ -1,0 +1,36 @@
+[project]
+name = "meyaar"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=1.14.0",
+    "datasets>=5.0.1",
+    "faiss-cpu>=1.15.0",
+    "geoalchemy2>=0.20.0",
+    "geopandas>=1.1.4",
+    "groq>=1.7.0",
+    "jinja2>=3.1.6",
+    "jupyter>=1.1.1",
+    "kaleido>=1.4.0",
+    "matplotlib>=3.11.1",
+    "numpy>=2.5.2",
+    "pandas>=3.0.5",
+    "pillow>=12.3.0",
+    "playwright>=1.62.0",
+    "plotly>=7.0.0",
+    "psycopg2-binary>=2.9.12",
+    "pyarrow>=25.0.1",
+    "pyogrio>=0.13.0",
+    "pyproj>=3.7.2",
+    "python-dotenv>=1.2.3",
+    "scikit-learn>=1.9.0",
+    "sentence-transformers>=6.0.1",
+    "shapely>=2.1.2",
+    "sqlalchemy>=2.0.52",
+    "streamlit>=1.63.0",
+    "torch>=2.14.0",
+    "transformers>=5.16.1",
+    "xgboost>=3.4.1",
+]
