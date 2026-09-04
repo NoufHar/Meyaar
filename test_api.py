@@ -44,3 +44,77 @@ def test_inspect_rejects_unsupported_extension():
     )
 
     assert response.status_code == 415
+
+
+def test_analyze_image_endpoint(
+    monkeypatch,
+):
+    def fake_pipeline(filename, content):
+        return {
+            "filename": filename,
+            "status": "completed",
+            "elements": [
+                {
+                    "element": "title",
+                    "present": False,
+                    "confidence": None,
+                    "location": None,
+                },
+                {
+                    "element": "legend",
+                    "present": True,
+                    "confidence": None,
+                    "location": None,
+                },
+                {
+                    "element": "scale",
+                    "present": True,
+                    "confidence": None,
+                    "location": None,
+                },
+                {
+                    "element": "north_arrow",
+                    "present": True,
+                    "confidence": None,
+                    "location": None,
+                },
+            ],
+            "issues": [
+                {
+                    "error_type": "missing_title",
+                    "severity": "warning",
+                    "message": (
+                        "The map does not contain "
+                        "a detectable title."
+                    ),
+                    "confidence": None,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(
+        "src.api.main.run_vision_pipeline",
+        fake_pipeline,
+    )
+
+    response = client.post(
+        "/images/analyze",
+        files={
+            "file": (
+                "map.png",
+                create_png(),
+                "image/png",
+            )
+        },
+    )
+
+    assert response.status_code == 200
+
+    result = response.json()
+
+    assert result["filename"] == "map.png"
+    assert result["status"] == "completed"
+    assert len(result["elements"]) == 4
+    assert result["issues"][0]["error_type"] == (
+        "missing_title"
+    )

@@ -8,9 +8,17 @@ from src.vision.image_loader import InvalidImageError, inspect_image
 from src.vision.vision_model import VisionModelNotConfiguredError
 from src.vision.vision_pipeline import run_vision_pipeline
 
+from agent.api.router import router as analysis_router
+
+
 app = FastAPI(
     title="Meyaar Backend API",
     version="0.1.0",
+)
+
+app.include_router(
+    analysis_router,
+    prefix="/api",
 )
 
 MAX_IMAGE_SIZE = 25 * 1024 * 1024
