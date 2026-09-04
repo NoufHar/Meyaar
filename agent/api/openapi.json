@@ -1,0 +1,477 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Meyaar Error Analysis Agent API",
+    "description": "Agentic interpretation layer on top of the PostGIS rule engine.",
+    "version": "0.3.0"
+  },
+  "paths": {
+    "/api/validation/{run_id}/analyze": {
+      "post": {
+        "tags": [
+          "validation-analysis"
+        ],
+        "summary": "Trigger Error Analysis for a validation run",
+        "operationId": "trigger_analysis_api_validation__run_id__analyze_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid4",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyzeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/validation/{run_id}/analysis": {
+      "get": {
+        "tags": [
+          "validation-analysis"
+        ],
+        "summary": "Retrieve Error Analyses for a validation run",
+        "operationId": "get_analysis_api_validation__run_id__analysis_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid4",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/validation/{run_id}/chat": {
+      "post": {
+        "tags": [
+          "validation-analysis"
+        ],
+        "summary": "Ask a grounded question about a run's engine results",
+        "description": "Chat endpoint: answers from the run's stored analyses + summary only.\n\nRequires an LLM key (MEYAAR_LLM_API_KEY) \u2014 analysis endpoints work\nwithout one, chat does not.",
+        "operationId": "chat_about_run_api_validation__run_id__chat_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid4",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnalysisListResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/RunSummary"
+          },
+          "analyses": {
+            "items": {
+              "$ref": "#/components/schemas/ErrorAnalysis"
+            },
+            "type": "array",
+            "title": "Analyses"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "summary"
+        ],
+        "title": "AnalysisListResponse",
+        "description": "GET /api/validation/{run_id}/analysis body."
+      },
+      "AnalyzeResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "total_errors_analyzed": {
+            "type": "integer",
+            "title": "Total Errors Analyzed",
+            "default": 0
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "status"
+        ],
+        "title": "AnalyzeResponse",
+        "description": "POST /api/validation/{run_id}/analyze body."
+      },
+      "ChatRequest": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Question"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question"
+        ],
+        "title": "ChatRequest"
+      },
+      "ChatResponse": {
+        "properties": {
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Sources"
+          }
+        },
+        "type": "object",
+        "required": [
+          "question",
+          "answer"
+        ],
+        "title": "ChatResponse"
+      },
+      "ErrorAnalysis": {
+        "properties": {
+          "result_id": {
+            "type": "integer",
+            "title": "Result Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "layer_name": {
+            "type": "string",
+            "title": "Layer Name"
+          },
+          "feature_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Id"
+          },
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          },
+          "error_type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "severity": {
+            "type": "string",
+            "title": "Severity"
+          },
+          "status": {
+            "type": "string",
+            "pattern": "^(confirmed|candidate|informational|insufficient_context)$",
+            "title": "Status"
+          },
+          "explanation": {
+            "type": "string",
+            "title": "Explanation"
+          },
+          "cause": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cause"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation"
+          },
+          "human_review_required": {
+            "type": "boolean",
+            "title": "Human Review Required",
+            "default": false
+          },
+          "related_features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Related Features"
+          },
+          "insufficient_context": {
+            "type": "boolean",
+            "title": "Insufficient Context",
+            "default": false
+          },
+          "agent_model": {
+            "type": "string",
+            "title": "Agent Model",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "result_id",
+          "run_id",
+          "layer_name",
+          "rule_id",
+          "error_type",
+          "severity",
+          "status",
+          "explanation"
+        ],
+        "title": "ErrorAnalysis",
+        "description": "Agent interpretation of ONE validation result (agent_error_analysis)."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "RunSummary": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "total_errors": {
+            "type": "integer",
+            "title": "Total Errors",
+            "default": 0
+          },
+          "critical_errors": {
+            "type": "integer",
+            "title": "Critical Errors",
+            "default": 0
+          },
+          "high_errors": {
+            "type": "integer",
+            "title": "High Errors",
+            "default": 0
+          },
+          "medium_errors": {
+            "type": "integer",
+            "title": "Medium Errors",
+            "default": 0
+          },
+          "low_errors": {
+            "type": "integer",
+            "title": "Low Errors",
+            "default": 0
+          },
+          "most_common_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Most Common Error"
+          },
+          "priority_actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Priority Actions"
+          },
+          "counts_by_rule": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts By Rule"
+          },
+          "counts_by_layer": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts By Layer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "RunSummary",
+        "description": "Run-level rollup returned alongside individual analyses."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

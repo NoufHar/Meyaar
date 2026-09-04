@@ -1,0 +1,4 @@
+[
+  {"result_id": 101, "run_id": "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d", "layer_name": "buildings", "feature_id": "BLD_999", "rule_id": "BLD002", "error_type": "Duplicate Buildings", "severity": "medium", "details": ""},
+  {"result_id": 102, "run_id": "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d", "layer_name": "roads", "feature_id": "RD_777", "rule_id": "RD002", "error_type": "Road Undershoot", "severity": "high", "details": ""}
+]
