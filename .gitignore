@@ -45,3 +45,5 @@ wandb/
 outputs/
 tmp/
 *.log
+
+local_test_data/

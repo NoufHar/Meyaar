@@ -1,0 +1,87 @@
+{
+  "run_id": "316525f7-a7e3-43bd-81a5-7f442397dd1f",
+  "summary": {
+    "total_errors": 9,
+    "critical_errors": 1,
+    "high_errors": 6,
+    "medium_errors": 2,
+    "low_errors": 0,
+    "most_common_error": "Road Undershoot",
+    "counts_by_rule": {
+      "RD001": 2,
+      "RD002": 4,
+      "RD003": 2,
+      "RD005": 1
+    },
+    "counts_by_layer": {
+      "roads": 9
+    },
+    "human_review_pending": 6,
+    "analyzed": 9,
+    "priority_actions": [
+      "Resolve critical errors first (missing geometry / CRS / coordinates)",
+      "Fix high-severity errors before re-running validation",
+      "Review heuristic topology candidates flagged for human review"
+    ]
+  },
+  "analyses": [
+    {
+      "result_id": 120,
+      "run_id": "316525f7-a7e3-43bd-81a5-7f442397dd1f",
+      "layer_name": "roads",
+      "feature_id": "RD_INJ_OVER",
+      "rule_id": "RD001",
+      "error_type": "Road Overshoot",
+      "severity": "high",
+      "status": "candidate",
+      "explanation": "Heuristic topology candidate for road overshoot: road RD_INJ_OVER appears to continue approximately 0.40 m past the intersection with road RD_INJ_OVER_B, which is well within the 5 m tolerance used by rule RD001.",
+      "cause": "The RD_INJ_OVER linestring (spanning roughly x: 46.69804–46.70004 at y ≈ 24.7) extends beyond the junction with RD_INJ_OVER_B (a north–south segment near x ≈ 46.700036). This pattern is consistent with a line that was not trimmed to the true intersection vertex during digitization or conflation, producing a small dangling tail past the cross road. At 0.40 m the overshoot is minor but still a topology signal.",
+      "recommendation": "Visually confirm the junction at the RD_INJ_OVER / RD_INJ_OVER_B crossing (centroid vicinity: 46.69904, 24.7). If a real overshoot is visible, trim the endpoint of RD_INJ_OVER to the exact intersection with RD_INJ_OVER_B. If the continuation is intentional (e.g., a fork, parallel lane, or overpass/underpass representation), mark this candidate as a false positive and document the justification.",
+      "human_review_required": true,
+      "related_features": [
+        "RD_INJ_OVER_B"
+      ],
+      "insufficient_context": false,
+      "agent_model": "minimax/minimax-m3:free"
+    },
+    {
+      "result_id": 121,
+      "run_id": "316525f7-a7e3-43bd-81a5-7f442397dd1f",
+      "layer_name": "roads",
+      "feature_id": "RD_INJ_UNDER",
+      "rule_id": "RD001",
+      "error_type": "Road Overshoot",
+      "severity": "high",
+      "status": "candidate",
+      "explanation": "Heuristic topology candidate for road overshoot: road RD_INJ_UNDER continues approximately 4.05 m past the intersection with road RD_INJ_UNDER_D, which falls within the 5 m tolerance defined by rule RD001.",
+      "cause": "The RD_INJ_UNDER linestring (spanning roughly x: 46.70204–46.70404 at y ≈ 24.701) projects past the junction with RD_INJ_UNDER_D (a short north–south segment near x ≈ 46.704). This is consistent with an endpoint that was not snapped to the cross road, leaving a ~4 m tail. Because the magnitude is close to the tolerance limit, distinguishing a true overshoot from intentional geometry (e.g., an underpass, lane split, or dual carriageway return) requires visual inspection.",
+      "recommendation": "Visually verify the junction at the RD_INJ_UNDER / RD_INJ_UNDER_D crossing (centroid vicinity: 46.70304, 24.701). If confirmed as an overshoot, trim the dangling end of RD_INJ_UNDER to the precise intersection with RD_INJ_UNDER_D and re-run the RD001 check. If the geometry represents a legitimate crossing configuration (such as a grade-separated underpass, which the feature naming hints at), mark this candidate as a false positive with documented evidence.",
+      "human_review_required": true,
+      "related_features": [
+        "RD_INJ_UNDER_D"
+      ],
+      "insufficient_context": false,
+      "agent_model": "minimax/minimax-m3:free"
+    },
+    {
+      "result_id": 116,
+      "run_id": "316525f7-a7e3-43bd-81a5-7f442397dd1f",
+      "layer_name": "roads",
+      "feature_id": "RD_INJ_INVALID",
+      "rule_id": "RD002",
+      "error_type": "Road Undershoot",
+      "severity": "high",
+      "status": "candidate",
+      "explanation": "Road RD_INJ_INVALID has a start endpoint that stops 3.64 m short of road RD_INJ_OVER_B. The geometry context shows RD_INJ_INVALID occupies a small bounding box near (46.70006, 24.70005), while RD_INJ_OVER_B runs vertically near longitude 46.700036 — consistent with the start of RD_INJ_INVALID falling just short of reaching the vertical road. Because this is a heuristic topology check within a 5 m tolerance, visual confirmation is needed to determine whether the gap is a true undershoot or an intentional terminus.",
+      "cause": "Heuristic undershoot candidate: the start endpoint of RD_INJ_INVALID falls within the 5 m tolerance of RD_INJ_OVER_B but does not touch it, indicating a possible topology gap at the junction.",
+      "recommendation": "Visually verify the gap at the start of RD_INJ_INVALID against RD_INJ_OVER_B. If a junction is intended, extend the line endpoint to snap to RD_INJ_OVER_B; otherwise mark as false positive.",
+      "human_review_required": true,
+      "related_features": [
+        "RD_INJ_INVALID",
+        "RD_INJ_OVER_B"
+      ],
+      "insufficient_context": false,
+      "agent_model": "minimax/minimax-m3:free"
+    }
+  ]
+}

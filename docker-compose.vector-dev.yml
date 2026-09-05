@@ -1,0 +1,23 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.5
+    container_name: meyaar-postgis-dev
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: meyaar_db
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - meyaar_postgis_data:/var/lib/postgresql/data
+      - ./agent/schema/agent_error_analysis.sql:/docker-entrypoint-initdb.d/01-agent-analysis.sql:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U postgres -d meyaar_db
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  meyaar_postgis_data:
