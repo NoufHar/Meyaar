@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import subprocess
 import tempfile
 import wave
 from pathlib import Path
@@ -143,7 +144,7 @@ def create_tts_chunk(
 
 def merge_wav_files(files, output_path):
     """
-    Merge WAV chunks.
+    Merge WAV chunks into one WAV file.
     """
 
     with wave.open(str(files[0]), "rb") as first:
@@ -165,24 +166,67 @@ def merge_wav_files(files, output_path):
                 )
 
 
+def convert_wav_to_mp3(wav_path, mp3_path):
+    """
+    Convert WAV to MP3 automatically using FFmpeg.
+    """
+
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(wav_path),
+                "-codec:a",
+                "libmp3lame",
+                "-q:a",
+                "2",
+                str(mp3_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    except FileNotFoundError:
+        raise RuntimeError(
+            "FFmpeg was not found. Make sure FFmpeg is installed and available in PATH."
+        )
+
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(
+            f"FFmpeg conversion failed: {error.stderr}"
+        )
+
+
 def create_audio_summary(
     dataset,
     validation,
     quality_summary,
     report,
-    output_path="outputs/MEYAAR_Summary.wav",
+    output_path="outputs/MEYAAR_Summary.mp3",
     voice="lulwa",
 ):
     """
-    Create the final Meyaar audio report.
+    Create the final Meyaar audio report as MP3.
+
+    Flow:
+    text -> WAV chunks -> merged WAV -> MP3
     """
 
     output_path = Path(output_path)
+
+    # Always make the final output an MP3 file.
+    output_path = output_path.with_suffix(".mp3")
 
     output_path.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
+
+    # Temporary final WAV before MP3 conversion.
+    wav_output_path = output_path.with_suffix(".wav")
 
     audio_text = generate_audio_report_text(
         dataset=dataset,
@@ -220,10 +264,20 @@ def create_audio_summary(
 
             wav_files.append(chunk_path)
 
+        # Merge all TTS chunks.
         merge_wav_files(
             files=wav_files,
-            output_path=output_path,
+            output_path=wav_output_path,
         )
+
+    # Convert the merged WAV to MP3.
+    convert_wav_to_mp3(
+        wav_path=wav_output_path,
+        mp3_path=output_path,
+    )
+
+    # Remove temporary WAV after successful conversion.
+    wav_output_path.unlink(missing_ok=True)
 
     return {
         "status": "success",
