@@ -266,3 +266,24 @@ The test successfully:
 - Generated explanations and recommendations
 - Returned the complete result as JSON
 
+## Vector Benchmark Evaluation
+
+The vector benchmark evaluator compares PostGIS validation results with a
+ground-truth CSV file using the validation run ID.
+
+It calculates the following metrics for each supported road error type:
+
+- True positives
+- False positives
+- False negatives
+- Precision
+- Recall
+- F1 score
+
+Run the evaluator:
+
+```bash
+python -m tools.vector_benchmark_evaluator \
+  --ground-truth "path/to/test_ground_truth.csv" \
+  --run-id "validation-run-id" \
+  --output-directory "outputs/vector_benchmark"
