@@ -1,0 +1,21 @@
+id,question,expected_source,expected_page,category,found_rank,recall_at_5,recall_at_10
+EVAL001,ما المقصود باكتمال البيانات الجيومكانية؟,National Geospatial Data Standards,9,data_quality,,False,False
+EVAL002,ما المقصود بالدقة المكانية في معايير البيانات الجيومكانية الوطنية؟,National Geospatial Data Standards,9,data_quality,3.0,True,True
+EVAL003,ما المقصود بالجودة الموضوعية للبيانات الجيومكانية؟,National Geospatial Data Standards,9,data_quality,1.0,True,True
+EVAL004,ما المقصود بالتطابق المنطقي للبيانات الجيومكانية؟,National Geospatial Data Standards,9,data_quality,2.0,True,True
+EVAL005,ما المقصود بالتطابق الطوبولوجي؟,National Geospatial Data Standards,9,data_quality,5.0,True,True
+EVAL006,ما الذي يجب تقييمه طوبولوجياً في شبكة النقل؟,National Geospatial Data Standards,14,data_quality,1.0,True,True
+EVAL007,ما متطلبات التطابق الطوبولوجي المتعلقة بالمباني؟,National Geospatial Data Standards,15,data_quality,2.0,True,True
+EVAL008,ما متطلبات تقييم جودة البيانات الجيومكانية المذكورة في المعايير؟,National Geospatial Data Standards,17,data_quality,8.0,False,True
+EVAL009,ما هو المرجع المكاني الوطني للمملكة SANSRS؟,SANSRS User Guideline,6,spatial_reference,6.0,False,True
+EVAL010,ما المكونات الجيوديسية الرئيسية للمرجع المكاني الوطني SANSRS؟,SANSRS User Guideline,6,spatial_reference,7.0,False,True
+EVAL011,لماذا يجب تحويل البيانات الجيومكانية الحالية إلى SANSRS؟,SANSRS User Guideline,13,spatial_reference,1.0,True,True
+EVAL012,ما نوعا البيانات الجيومكانية اللذان يناقشهما دليل التحويل إلى SANSRS؟,SANSRS User Guideline,13,spatial_reference,1.0,True,True
+EVAL013,ما أكواد EPSG المسقطة لـ KSA-GRF17 في مناطق UTM من 36N إلى 40N؟,SANSRS User Guideline,22,spatial_reference,1.0,True,True
+EVAL014,ما مكونات جودة البيانات المذكورة في دليل Cartography؟,Technical Guidelines for Cartography,20,cartography,1.0,True,True
+EVAL015,ما متطلب الدقة الأفقية للمنتجات الكارتوغرافية؟,Technical Guidelines for Cartography,21,cartography,1.0,True,True
+EVAL016,ما أمثلة التعليقات الجغرافية أو العناصر المرتبطة بالمقياس في عرض الخريطة؟,Technical Guidelines for Cartography,24,cartography,1.0,True,True
+EVAL017,ما الذي تتضمنه طبقة Map Elements في Map Collar؟,Technical Guidelines for Cartography,27,cartography,2.0,True,True
+EVAL018,ما المجلدات أو الطبقات التي يجب أن تكون موجودة في كل Geospatial PDF بحسب الدليل؟,Technical Guidelines for Cartography,28,cartography,1.0,True,True
+EVAL019,ما المقصود بـLegibility في إدارة المساحات البيضاء للخريطة؟,Technical Guidelines for Cartography,28,cartography,1.0,True,True
+EVAL020,ما أنواع الـannotations التي يغطيها دليل Topographic Maps؟,Technical Guidelines for Cartography,50,cartography,2.0,True,True

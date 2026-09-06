@@ -45,3 +45,4 @@ class VectorProcessingResponse(BaseModel):
     insertion: dict[str, Any]
     validation: dict[str, Any]
     analysis: dict[str, Any]
+    map_data: dict[str, Any]

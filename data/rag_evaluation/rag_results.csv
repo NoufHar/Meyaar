@@ -1,0 +1,21 @@
+question,category,expected_source,expected_page,retrieved_source,retrieved_page,retrieved_score,hit_at_1,hit_at_3
+ما المقصود باكتمال البيانات الجيومكانية؟,data_quality,National Geospatial Data Standards,9,National Geospatial Data Standards,5,0.043879283009717794,False,True
+ما المقصود بالدقة المكانية في معايير البيانات الجيومكانية الوطنية؟,data_quality,National Geospatial Data Standards,9,National Geospatial Data Standards,16,0.04554334554334554,False,True
+ما المقصود بالجودة الموضوعية للبيانات الجيومكانية؟,data_quality,National Geospatial Data Standards,9,National Geospatial Data Standards,9,0.045146520146520146,True,True
+ما المقصود بالتطابق المنطقي للبيانات الجيومكانية؟,data_quality,National Geospatial Data Standards,9,National Geospatial Data Standards,15,0.044853737811484294,False,True
+ما المقصود بالتطابق الطوبولوجي؟,data_quality,National Geospatial Data Standards,9,National Geospatial Data Standards,12,0.03200204813108039,False,True
+ما الذي يجب تقييمه طوبولوجياً في شبكة النقل؟,data_quality,National Geospatial Data Standards,14,National Geospatial Data Standards,14,0.04767399003253049,True,True
+ما متطلبات التطابق الطوبولوجي المتعلقة بالمباني؟,data_quality,National Geospatial Data Standards,15,National Geospatial Data Standards,12,0.048131080389144903,False,True
+ما متطلبات تقييم جودة البيانات الجيومكانية المذكورة في المعايير؟,data_quality,National Geospatial Data Standards,17,National Geospatial Data Standards,5,0.04430363543266769,False,False
+ما هو المرجع المكاني الوطني للمملكة SANSRS؟,spatial_reference,SANSRS User Guideline,6,SANSRS User Guideline,7,0.0452122777796662,False,False
+ما المكونات الجيوديسية الرئيسية للمرجع المكاني الوطني SANSRS؟,spatial_reference,SANSRS User Guideline,6,SANSRS User Guideline,7,0.04839549075403121,False,True
+لماذا يجب تحويل البيانات الجيومكانية الحالية إلى SANSRS؟,spatial_reference,SANSRS User Guideline,13,SANSRS User Guideline,13,0.04865990111891751,True,True
+ما نوعا البيانات الجيومكانية اللذان يناقشهما دليل التحويل إلى SANSRS؟,spatial_reference,SANSRS User Guideline,13,SANSRS User Guideline,13,0.04722835723395652,True,True
+ما أكواد EPSG المسقطة لـ KSA-GRF17 في مناطق UTM من 36N إلى 40N؟,spatial_reference,SANSRS User Guideline,22,SANSRS User Guideline,22,0.04918032786885246,True,True
+ما مكونات جودة البيانات المذكورة في دليل Cartography؟,cartography,Technical Guidelines for Cartography,20,Technical Guidelines for Cartography,39,0.04479638009049774,False,True
+ما متطلب الدقة الأفقية للمنتجات الكارتوغرافية؟,cartography,Technical Guidelines for Cartography,21,Technical Guidelines for Cartography,7,0.04713064713064713,False,False
+ما أمثلة التعليقات الجغرافية أو العناصر المرتبطة بالمقياس في عرض الخريطة؟,cartography,Technical Guidelines for Cartography,24,Technical Guidelines for Cartography,48,0.04741797364748185,False,False
+ما الذي تتضمنه طبقة Map Elements في Map Collar؟,cartography,Technical Guidelines for Cartography,27,Technical Guidelines for Cartography,27,0.048915917503966164,True,True
+ما المجلدات أو الطبقات التي يجب أن تكون موجودة في كل Geospatial PDF بحسب الدليل؟,cartography,Technical Guidelines for Cartography,28,Technical Guidelines for Cartography,28,0.048915917503966164,True,True
+ما المقصود بـLegibility في إدارة المساحات البيضاء للخريطة؟,cartography,Technical Guidelines for Cartography,28,Technical Guidelines for Cartography,28,0.04891591750396616,True,True
+ما أنواع الـannotations التي يغطيها دليل Topographic Maps؟,cartography,Technical Guidelines for Cartography,50,Technical Guidelines for Cartography,50,0.048651507139079855,True,True

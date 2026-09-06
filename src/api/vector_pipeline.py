@@ -1,5 +1,6 @@
 import os
-
+import json
+import re
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 
@@ -215,14 +216,33 @@ def process_vector_upload(
 
         run_id = validation["run_id"]
 
-        analysis = run_analysis(run_id)
+        analysis = run_analysis(run_id) 
+
+        # Prepare dataset for frontend map
+        map_gdf = gdf.copy()
+
+        if map_gdf.crs is not None:
+            map_gdf = map_gdf.to_crs(epsg=4326)
+
+        map_data = json.loads(map_gdf.to_json())
+        # Extract error locations from Agent 2 explanation
+        for item in analysis.get("analyses", []):
+            explanation = item.get("explanation", "")
+            match = re.search(r"centroid POINT\(([-\d.]+) ([-\d.]+)\)", explanation,)
+            if match:
+                item["location"] = {
+                    "lon": float(match.group(1)),
+                    "lat": float(match.group(2)),}
+            else:
+                item["location"] = None
 
         return {
-            "filename": filename,
-            "status": "completed",
-            "layer_name": layer_name,
-            "run_id": run_id,
-            "insertion": insertion,
-            "validation": validation,
-            "analysis": analysis,
-        }
+    "filename": filename,
+    "status": "completed",
+    "layer_name": layer_name,
+    "run_id": run_id,
+    "insertion": insertion,
+    "validation": validation,
+    "analysis": analysis,
+    "map_data": map_data,
+}

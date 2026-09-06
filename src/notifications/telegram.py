@@ -167,6 +167,47 @@ def send_voice(
 
     return response.json()
 
+def send_document(
+    document_path,
+    chat_id=None,
+    caption="Meyaar Quality Assessment Report",
+):
+    """Send a Meyaar report to Telegram."""
+
+    _check_token()
+
+    chat_id = _resolve_chat_id(chat_id)
+
+    document_path = Path(document_path)
+
+    if not document_path.exists():
+        raise FileNotFoundError(
+            f"Document not found: {document_path}"
+        )
+
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendDocument"
+
+    with document_path.open("rb") as document_file:
+        response = requests.post(
+            url,
+            data={
+                "chat_id": chat_id,
+                "caption": caption,
+            },
+            files={
+                "document": (
+                    document_path.name,
+                    document_file,
+                    "application/pdf",
+                )
+            },
+            timeout=60,
+        )
+
+    response.raise_for_status()
+
+    return response.json()
+
 
 # =========================================================
 # Test

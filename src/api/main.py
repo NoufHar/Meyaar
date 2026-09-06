@@ -1,4 +1,15 @@
 from pathlib import Path
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from src.reporting.report_generator import (
+    create_pdf,
+    generate_report_content,
+)
+from src.voice.voice_summary import create_audio_summary
+from src.notifications.telegram import (
+    send_document,
+    send_voice,
+)
 
 from fastapi import (
     FastAPI,
@@ -36,7 +47,16 @@ app = FastAPI(
     title="Meyaar Backend API",
     version="0.1.0",
 )
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(
     analysis_router,
     prefix="/api",
@@ -57,6 +77,40 @@ SUPPORTED_IMAGE_EXTENSIONS = {
 def health():
     return {"status": "healthy"}
 
+class VoiceSummaryRequest(BaseModel):
+    dataset: dict
+    validation: dict
+    quality_summary: dict
+    report: dict
+
+
+@app.post("/voice/summary")
+def generate_voice_summary(payload: VoiceSummaryRequest):
+    try:
+        result = create_audio_summary(
+            dataset=payload.dataset,
+            validation=payload.validation,
+            quality_summary=payload.quality_summary,
+            report=payload.report,
+            output_path="outputs/MEYAAR_API_Summary.mp3",
+        )
+
+        # Send generated MP3 to Telegram
+        send_voice(
+            result["audio_path"],
+            caption="Meyaar Analysis Summary",
+        )
+
+        return {
+            **result,
+            "telegram_sent": True,
+        }
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=str(error),
+        ) from error
 
 @app.post("/images/inspect", response_model=ImageInspectionResponse)
 async def inspect_uploaded_image(file: UploadFile = File(...)):
@@ -194,6 +248,67 @@ async def process_uploaded_vector(
         ) from error
 
     except VectorProcessingError as error:
+        raise HTTPException(
+            status_code=500,
+            detail=str(error),
+        ) from error
+class ReportGenerationRequest(BaseModel):
+    dataset: dict
+    validation: dict
+
+
+@app.post("/reports/generate")
+def generate_report(payload: ReportGenerationRequest):
+    try:
+        # 1. Generate report narrative
+        report = generate_report_content(
+            dataset=payload.dataset,
+            validation=payload.validation,
+        )
+
+        # 2. Generate PDF
+        pdf_path = create_pdf(
+            dataset=payload.dataset,
+            validation=payload.validation,
+            report=report,
+            output_path="outputs/MEYAAR_Report.pdf",
+        )
+
+        # 3. Generate audio summary
+        audio_result = create_audio_summary(
+            dataset=payload.dataset,
+            validation=payload.validation,
+            quality_summary={
+                "total_findings": payload.validation.get(
+                    "total_findings",
+                    payload.validation.get("total_errors", 0),
+                )
+            },
+            report=report,
+            output_path="outputs/MEYAAR_Summary.mp3",
+        )
+
+        # 4. Send PDF to Telegram
+        send_document(
+            pdf_path,
+            caption="Meyaar Quality Assessment Report",
+        )
+
+        # 5. Send audio to Telegram
+        send_voice(
+            audio_result["audio_path"],
+            caption="Meyaar Audio Summary",
+        )
+
+        return {
+            "status": "success",
+            "report_path": pdf_path,
+            "audio_path": audio_result["audio_path"],
+            "telegram_sent": True,
+            "report": report,
+        }
+
+    except Exception as error:
         raise HTTPException(
             status_code=500,
             detail=str(error),
