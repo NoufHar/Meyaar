@@ -9,7 +9,10 @@
     "requires_human_review": false,
     "layer": "buildings",
     "recommendation": "Compare both footprints against the survey/plan source and remove the unintended overlap; if a shared wall or valid adjacency exists, snap the boundaries so polygons only touch, never overlap.",
-    "priority_hint": "Resolve overlaps before topology-dependent edits."
+    "priority_hint": "Resolve overlaps before topology-dependent edits.",
+    "remediation_type": "human_review",
+    "auto_fix_allowed": false,
+    "remediation_description": "Which footprint is authoritative cannot be proven automatically — a human must compare against the survey/plan source before editing."
   },
   "BLD002": {
     "rule_id": "BLD002",
@@ -21,7 +24,10 @@
     "requires_human_review": false,
     "layer": "buildings",
     "recommendation": "Keep one authoritative building row and merge or delete the duplicate after confirming its attributes.",
-    "priority_hint": "Deduplicate before counting or aggregating features."
+    "priority_hint": "Deduplicate before counting or aggregating features.",
+    "remediation_type": "human_review",
+    "auto_fix_allowed": false,
+    "remediation_description": "Deleting/merging a row is destructive and duplicate attributes may differ — resolution requires human confirmation."
   },
   "BLD003": {
     "rule_id": "BLD003",
@@ -33,7 +39,10 @@
     "requires_human_review": false,
     "layer": "buildings",
     "recommendation": "Repair the geometry (e.g. ST_MakeValid) and re-validate; if the source data is genuinely malformed, correct it at the source.",
-    "priority_hint": "Invalid geometry can break spatial operations — fix first."
+    "priority_hint": "Invalid geometry can break spatial operations — fix first.",
+    "remediation_type": "geometry_repair",
+    "auto_fix_allowed": true,
+    "remediation_description": "Approved automatic fix: rebuild the footprint with ST_MakeValid inside a transaction, verify the result is valid, and record before/after geometry. Never applied when the feature row is missing or the result would be empty."
   },
   "BLD004": {
     "rule_id": "BLD004",
@@ -45,7 +54,10 @@
     "requires_human_review": false,
     "layer": "buildings",
     "recommendation": "Provide the missing footprint geometry from the authoritative source, or remove the row if it is not a building.",
-    "priority_hint": "Features without geometry cannot be mapped or analyzed."
+    "priority_hint": "Features without geometry cannot be mapped or analyzed.",
+    "remediation_type": "human_review",
+    "auto_fix_allowed": false,
+    "remediation_description": "Geometry cannot be invented — the footprint must be supplied or the row removed by a human from the authoritative source."
   },
   "RD001": {
     "rule_id": "RD001",
@@ -57,7 +69,10 @@
     "requires_human_review": true,
     "layer": "roads",
     "recommendation": "Visually confirm the junction; if it is a true overshoot, trim the line to the intersection; otherwise mark the candidate as a false positive.",
-    "priority_hint": "Review candidates before batch-editing road topology."
+    "priority_hint": "Review candidates before batch-editing road topology.",
+    "remediation_type": "human_review",
+    "auto_fix_allowed": false,
+    "remediation_description": "Heuristic (5 m tolerance): trimming is only correct after a human confirms the candidate is a true overshoot and not a legitimate road continuation."
   },
   "RD002": {
     "rule_id": "RD002",
@@ -69,7 +84,10 @@
     "requires_human_review": true,
     "layer": "roads",
     "recommendation": "Visually confirm the gap; if it is a true undershoot, extend the line to snap to the junction; otherwise mark the candidate as a false positive.",
-    "priority_hint": "Review candidates before batch-editing road topology."
+    "priority_hint": "Review candidates before batch-editing road topology.",
+    "remediation_type": "human_review",
+    "auto_fix_allowed": false,
+    "remediation_description": "Heuristic (5 m tolerance): extending/snapping requires human confirmation that a real gap exists and where the true junction is."
   },
   "RD003": {
     "rule_id": "RD003",
@@ -81,7 +99,10 @@
     "requires_human_review": false,
     "layer": "roads",
     "recommendation": "Keep one authoritative road row and merge or delete the duplicate after confirming its attributes.",
-    "priority_hint": "Deduplicate before network analysis."
+    "priority_hint": "Deduplicate before network analysis.",
+    "remediation_type": "human_review",
+    "auto_fix_allowed": false,
+    "remediation_description": "Deleting/merging a road row is destructive and may break connectivity — resolution requires human confirmation."
   },
   "RD004": {
     "rule_id": "RD004",
@@ -93,7 +114,10 @@
     "requires_human_review": false,
     "layer": "roads",
     "recommendation": "Repair the geometry (e.g. ST_MakeValid) and re-validate; correct malformed source data upstream.",
-    "priority_hint": "Invalid geometry can break spatial operations — fix first."
+    "priority_hint": "Invalid geometry can break spatial operations — fix first.",
+    "remediation_type": "geometry_repair",
+    "auto_fix_allowed": true,
+    "remediation_description": "Approved automatic fix: rebuild the linework with ST_MakeValid inside a transaction, verify the result is valid, and record before/after geometry. Never applied when the feature row is missing or the result would be empty."
   },
   "RD005": {
     "rule_id": "RD005",
@@ -105,7 +129,10 @@
     "requires_human_review": false,
     "layer": "roads",
     "recommendation": "Provide the missing road geometry from the authoritative source, or remove the row if it is not a road.",
-    "priority_hint": "Features without geometry cannot be mapped or analyzed."
+    "priority_hint": "Features without geometry cannot be mapped or analyzed.",
+    "remediation_type": "human_review",
+    "auto_fix_allowed": false,
+    "remediation_description": "Geometry cannot be invented — the road must be supplied or the row removed by a human from the authoritative source."
   },
   "GIS001": {
     "rule_id": "GIS001",
@@ -117,7 +144,10 @@
     "requires_human_review": false,
     "layer": "general",
     "recommendation": "Set or reproject the layer to the expected CRS before further processing.",
-    "priority_hint": "A wrong CRS invalidates every downstream coordinate."
+    "priority_hint": "A wrong CRS invalidates every downstream coordinate.",
+    "remediation_type": "crs_transform",
+    "auto_fix_allowed": false,
+    "remediation_description": "A CRS transform is only safe once the target EPSG code is confirmed by a human (layer-level change; no per-feature op implemented)."
   },
   "GIS002": {
     "rule_id": "GIS002",
@@ -129,7 +159,10 @@
     "requires_human_review": false,
     "layer": "general",
     "recommendation": "Reproject or fix the affected coordinates; verify the source CRS assumption.",
-    "priority_hint": "Out-of-range coordinates usually mean a CRS mix-up."
+    "priority_hint": "Out-of-range coordinates usually mean a CRS mix-up.",
+    "remediation_type": "human_review",
+    "auto_fix_allowed": false,
+    "remediation_description": "The correct source CRS must be identified by a human before any coordinate rewrite."
   },
   "GIS003": {
     "rule_id": "GIS003",
@@ -141,7 +174,10 @@
     "requires_human_review": false,
     "layer": "general",
     "recommendation": "Populate the required column from the authoritative source, or formally waive the requirement.",
-    "priority_hint": "Required attributes gate downstream compliance checks."
+    "priority_hint": "Required attributes gate downstream compliance checks.",
+    "remediation_type": "attribute_correction",
+    "auto_fix_allowed": false,
+    "remediation_description": "Column values must come from the authoritative source — a human must supply or waive them."
   },
   "GIS004": {
     "rule_id": "GIS004",
@@ -153,7 +189,10 @@
     "requires_human_review": false,
     "layer": "general",
     "recommendation": "Cast or clean the column so values match the expected type.",
-    "priority_hint": "Type mismatches break queries and aggregation."
+    "priority_hint": "Type mismatches break queries and aggregation.",
+    "remediation_type": "attribute_correction",
+    "auto_fix_allowed": false,
+    "remediation_description": "Casting is only safe when the unambiguous expected type is confirmed — human review required."
   },
   "GIS005": {
     "rule_id": "GIS005",
@@ -165,6 +204,9 @@
     "requires_human_review": false,
     "layer": "general",
     "recommendation": "Correct the value to one of the allowed values or extend the allowed list after domain approval.",
-    "priority_hint": "Standardized values keep the dataset interoperable."
+    "priority_hint": "Standardized values keep the dataset interoperable.",
+    "remediation_type": "attribute_correction",
+    "auto_fix_allowed": false,
+    "remediation_description": "Normalization to an allowed value requires the mapping to be unambiguous — human review required."
   }
 }

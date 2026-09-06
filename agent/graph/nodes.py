@@ -277,9 +277,15 @@ def _group_prompt(g: PreparedGroup) -> str:
         f"Rule definition: {rule_txt}\n"
         f"Layer: {g.layer_name}\n"
         "Errors (JSON): " + json.dumps(items, ensure_ascii=False) +
-        "\n\nReply STRICT JSON only: an array of objects with keys "
+        "Reply STRICT JSON only: an array of objects with keys "
         '["result_id", "status", "explanation", "cause", "recommendation", '
-        '"human_review_required", "related_features"]. '
+        '"human_review_required", "related_features", '
+        '"remediation_intent"(optional)]. '
+        '"remediation_intent" is ADVISORY ONLY: an object {"action": '
+        '"auto_fix"|"human_review"|"no_action", "reason": "..."}. A '
+        "deterministic policy layer validates it against the rule registry — "
+        "your suggestion can never override the policy (heuristic rules are "
+        "always human_review). "
         "Heuristic rules (type=heuristic) MUST be status 'candidate' with "
         "human_review_required=true. Keep explanations grounded in the data."
     )
@@ -306,6 +312,7 @@ def _analyze_group_llm(g: PreparedGroup, llm) -> Optional[list[dict]]:
 def analyze(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
     llm = get_llm_from(config)
     analyses: list[ErrorAnalysis] = []
+    remediation_intents: dict[int, dict] = {}
     trace = list(state.trace)
     errors = list(state.errors)
 
@@ -322,6 +329,10 @@ def analyze(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
                 r = by_result.get(rid)
                 if r is None:
                     continue  # LLM invented a result_id -> drop silently
+                # Advisory remediation intent (validated later by policy).
+                intent = raw.get("remediation_intent")
+                if isinstance(intent, dict):
+                    remediation_intents[rid] = intent
                 analyses.append(_repair_analysis(raw, r, rule,
                                                  g.contexts.get(r.feature_id)))
             # any item the LLM skipped -> template fallback for that item
@@ -338,7 +349,8 @@ def analyze(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
             src = "llm-fallback" if llm is not None else "template"
         trace.append(f"[analyze] {g.rule_id}: {src} ({len(g.items)} errors)")
 
-    return {"analyses": analyses, "trace": trace, "errors": errors}
+    return {"analyses": analyses, "remediation_intents": remediation_intents,
+            "trace": trace, "errors": errors}
 
 
 # ── validate output ─────────────────────────────────────────────────────────
@@ -381,11 +393,268 @@ def save_analyses(state: AgentState, config: Optional[RunnableConfig] = None) ->
                 "trace": _trace(state, "save", f"DB failure: {exc}")}
 
 
-# ── summarize ───────────────────────────────────────────────────────────────
+# ── summarize (incl. executive narrative, persisted per run) ────────────────
+def _remediation_counts(state: AgentState) -> dict:
+    recs = state.remediation or []
+    return {
+        "total": len(recs),
+        "auto_fixed": sum(1 for r in recs
+                          if r.get("action") == "auto_fix"
+                          and r.get("status") == "applied"),
+        "failed": sum(1 for r in recs if r.get("status") == "failed"),
+        "pending_review": sum(1 for r in recs
+                              if r.get("action") == "human_review"
+                              and r.get("status") == "pending_review"),
+        "no_action": sum(1 for r in recs if r.get("action") == "no_action"),
+    }
+
+
+def _findings_rows(summary: dict) -> list[dict]:
+    """counts_by_rule enriched with registry names/severity/layer, ordered by
+    severity (critical first), then name. Unknown rule ids keep the raw id."""
+    by_rule = summary.get("counts_by_rule") or {}
+    sev_rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+    rows = []
+    for rid, count in by_rule.items():
+        rd = get_rule(rid)
+        rows.append({
+            "rule_id": rid,
+            "count": count,
+            "name": rd.error_type if rd else rid,
+            "layer": (rd.layer if rd else "") or "",
+            "severity": rd.baseline_severity if rd else "low",
+        })
+    rows.sort(key=lambda x: (sev_rank.get(x["severity"], 3),
+                             x["name"].lower()))
+    return rows
+
+
+def _findings_text(summary: dict) -> str:
+    rows = _findings_rows(summary)
+    if not rows:
+        return ""
+    parts = []
+    for row in rows:
+        qual = (f" ({row['layer']})"
+                if row["layer"] and row["layer"] != "general" else "")
+        parts.append(f"{row['count']} {row['name']}{qual}")
+    return "Findings: " + ", ".join(parts) + "."
+
+
+def _template_narrative(state: AgentState, summary: dict,
+                        rem: dict) -> str:
+    """Deterministic executive summary (no LLM needed)."""
+    run_id = state.run_id
+    total = summary.get("total_errors", 0)
+    if total == 0:
+        return (f"Validation run {run_id} found no errors; "
+                "no agent remediation was required.")
+    parts = []
+    sev = ", ".join(f"{summary.get(k + '_errors', 0)} {k}"
+                    for k in ("critical", "high", "medium", "low")
+                    if summary.get(k + "_errors"))
+    parts.append(f"Validation run {run_id} reported {total} error(s) "
+                 f"({sev}).")
+    if summary.get("most_common_error"):
+        parts.append(f"The most common issue was "
+                     f"{summary['most_common_error'].lower()}.")
+    findings = _findings_text(summary)
+    if findings:
+        parts.append(findings)
+    parts.append(f"The agent analyzed {summary.get('analyzed', 0)} result(s).")
+    if rem.get("total"):
+        parts.append(
+            f"Remediation: {rem['auto_fixed']} automatically fixed "
+            f"(geometry repair), {rem['failed']} repair attempt(s) failed and "
+            f"were rolled back, {rem['pending_review']} queued for human "
+            f"review, {rem['no_action']} required no action.")
+    if summary.get("priority_actions"):
+        parts.append("Priority: " + summary["priority_actions"][0].lower() + ".")
+    return " ".join(parts)
+
+
+def _llm_narrative(state: AgentState, summary: dict, rem: dict,
+                   llm) -> Optional[str]:
+    """One LLM call per run for a grounded executive narrative. Falls back to
+    the template (caller) on any failure — never fabricates numbers."""
+    payload = {
+        "run_id": state.run_id,
+        "total_errors": summary.get("total_errors", 0),
+        "severity": {"critical": summary.get("critical_errors", 0),
+                     "high": summary.get("high_errors", 0),
+                     "medium": summary.get("medium_errors", 0),
+                     "low": summary.get("low_errors", 0)},
+        "findings_by_rule": _findings_rows(summary),
+        "counts_by_layer": summary.get("counts_by_layer", {}),
+        "most_common_error": summary.get("most_common_error"),
+        "remediation": rem,
+        "priority_actions": summary.get("priority_actions", [])[:3],
+    }
+    prompt = (
+        "You are Meyaar's reporting assistant. Write a concise executive "
+        "summary (3-6 sentences) of this geospatial quality validation run "
+        "for a technical team. Ground EVERY statement in the JSON provided — "
+        "never invent error counts, feature ids, areas, distances, or rule "
+        "meanings. Mention the severity distribution, list each distinct "
+        "error group from 'findings_by_rule' with its count (e.g. 'two "
+        "duplicate buildings, one missing geometry'), say which group is the "
+        "most common or most important, and give the remediation outcome "
+        "(how many errors were auto-fixed, how many need human review, how "
+        "many had no action). Plain prose, no markdown, no technical ids.\n\n"
+        "Run facts (JSON): " + json.dumps(payload, ensure_ascii=False)
+    )
+    attempts = max(1, settings.llm_retries)
+    for attempt in range(attempts):
+        try:
+            resp = llm.invoke(prompt)
+            text = _code_fence_strip(str(resp.content)).strip()
+            looks_like_json = text[:1] in ("{", "[")
+            if looks_like_json:
+                json.loads(text)   # raises -> not JSON, fine
+                continue           # structured JSON is NOT a narrative
+            if len(text) >= 40:
+                return text
+        except Exception as exc:
+            logger.warning("narrative attempt %d/%d failed: %s",
+                           attempt + 1, attempts, exc)
+    return None
+
+
 def summarize(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
     repo = get_repository(config)
     summary = repo.build_summary(state.results, state.analyses)
     summary["priority_actions"] = repo.priority_actions(summary)
+    rem = _remediation_counts(state)
+
+    llm = get_llm_from(config)
+    narrative: Optional[str] = None
+    if llm is not None and summary.get("total_errors", 0) > 0:
+        narrative = _llm_narrative(state, summary, rem, llm)
+    if not narrative:
+        narrative = _template_narrative(state, summary, rem)
+    summary["narrative"] = narrative
+    summary["remediation"] = rem
+
+    errors = list(state.errors)
+    try:
+        repo.save_run_summary(
+            state.run_id, narrative,
+            agent_model=settings.agent_model,
+            counts={"errors": {k: summary.get(k, 0) for k in
+                               ("total_errors", "critical_errors",
+                                "high_errors", "medium_errors", "low_errors",
+                                "analyzed")},
+                    "by_rule": summary.get("counts_by_rule", {}),
+                    "by_layer": summary.get("counts_by_layer", {}),
+                    "remediation": rem})
+    except Exception as exc:
+        logger.exception("save_run_summary failed for run %s", state.run_id)
+        errors.append(f"db.save_run_summary: {exc}")
+
     trace = state.trace + [f"[summarize] {summary['total_errors']} error(s), "
-                           f"{summary['analyzed']} analyzed"]
-    return {"summary": summary, "trace": trace}
+                           f"{summary['analyzed']} analyzed; narrative "
+                           f"{'saved' if not errors else 'logged'}"
+                           f" (model={settings.agent_model})"]
+    return {"summary": summary, "errors": errors, "trace": trace}
+
+
+# ── remediate (deterministic policy + whitelisted execution) ────────────────
+def _issue_text(r: ValidationResult, a: ErrorAnalysis) -> str:
+    if r.details:
+        detail = str(r.details).strip().replace("\n", " ")
+        return f"{a.error_type}: {detail[:240]}"
+    return a.error_type
+
+
+def remediate(state: AgentState, config: Optional[RunnableConfig] = None) -> dict:
+    """Decide remediation for every analyzed result and execute approved
+    auto-fixes. Runs AFTER validate_output and BEFORE save so both the
+    analyses and the remediation audit land in the same run.
+
+    Trust boundary: decisions come from agent/remediation/service.py which
+    reads the rule registry — the LLM's remediation_intent is advisory only
+    and can never override policy. Execution goes through ONE whitelisted
+    repository method (apply_geometry_repair); any failure is recorded as
+    status=failed (transaction rolled back by the repository).
+    """
+    from agent.remediation.service import decide
+
+    repo = get_repository(config)
+    if not state.analyses:
+        return {"remediation": [],
+                "trace": _trace(state, "remediate", "no analyses — nothing to remediate")}
+    results = {r.result_id: r for r in state.results}
+    records: list[dict] = []
+    errors = list(state.errors)
+
+    for a in state.analyses:
+        r = results.get(a.result_id)
+        if r is None:
+            continue
+        rule = get_rule(a.rule_id)
+        rule_dict = rule.model_dump() if rule else None
+
+        feature_available = False
+        if a.feature_id:
+            try:
+                feature_available = (repo.fetch_feature_context(
+                    a.layer_name, a.feature_id) is not None)
+            except Exception:
+                feature_available = False
+
+        decision = decide(r, a, rule_dict,
+                          llm_intent=state.remediation_intents.get(a.result_id),
+                          feature_available=feature_available)
+
+        rec = {
+            "run_id": a.run_id, "result_id": a.result_id,
+            "layer_name": a.layer_name, "feature_id": a.feature_id,
+            "rule_id": a.rule_id,
+            "action": decision.action,
+            "remediation_type": decision.remediation_type,
+            "status": "none",
+            "issue": _issue_text(r, a),
+            "reason": decision.reason,
+            "recommended_action": ((rule_dict or {}).get("recommendation")
+                                   or a.recommendation),
+            "before_state": {}, "after_state": {},
+            "agent_model": a.agent_model,
+            "human_review_required": decision.human_review_required,
+        }
+
+        if decision.action == "auto_fix":
+            try:
+                outcome = repo.apply_geometry_repair(a.layer_name, a.feature_id)
+                rec["status"] = "applied"
+                rec["before_state"] = outcome.get("before", {}) or {}
+                rec["after_state"] = outcome.get("after", {}) or {}
+                if not outcome.get("changed", True):
+                    rec["reason"] += (" Feature geometry already valid — "
+                                      "no change needed.")
+            except Exception as exc:
+                rec["status"] = "failed"
+                rec["reason"] = (f"{rec['reason']} Execution failed and was "
+                                 f"rolled back: {exc}")
+                errors.append(f"remediation.{a.rule_id}/{a.result_id}: {exc}")
+        elif decision.action == "human_review":
+            rec["status"] = "pending_review"
+        records.append(rec)
+
+    saved = 0
+    try:
+        saved = repo.save_remediation_records(records)
+    except Exception as exc:
+        logger.exception("save_remediation_records failed for run %s",
+                         state.run_id)
+        errors.append(f"db.save_remediation_records: {exc}")
+
+    applied = sum(1 for x in records if x["status"] == "applied")
+    pending = sum(1 for x in records if x["action"] == "human_review")
+    none = sum(1 for x in records if x["action"] == "no_action")
+    failed = sum(1 for x in records if x["status"] == "failed")
+    trace = _trace(
+        state, "remediate",
+        f"{len(records)} decision(s): {applied} auto-fixed, {pending} "
+        f"human-review, {none} no-action, {failed} failed"
+        + (f"; persisted {saved}" if saved else ""))
+    return {"remediation": records, "errors": errors, "trace": trace}

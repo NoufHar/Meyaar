@@ -1,7 +1,15 @@
 """LangGraph assembly + run entry point for the Error Analysis Agent.
 
-    START -> load_results -+-> prepare -> analyze -> validate -> save -> summarize -> END
-                           +---------------------------- (no results) -------> summarize -> END
+    START -> load_results -+-> prepare -> analyze -> validate -> remediate
+                           |                                    |
+                           +--------------- (no results) -------+--> save -> summarize -> END
+
+Remediation runs after validation and before save: decisions come from the
+deterministic policy layer (agent/remediation/service.py), approved
+auto-fixes are executed through the repository's whitelisted repair method,
+and the audit records land in agent_remediation_actions alongside the
+analyses. A clean run (no results) keeps the original short path:
+load -> summarize -> END.
 """
 from __future__ import annotations
 
@@ -22,6 +30,7 @@ def build_graph():
     g.add_node("prepare", nodes.prepare_groups)
     g.add_node("analyze", nodes.analyze)
     g.add_node("validate", nodes.validate_output)
+    g.add_node("remediate", nodes.remediate)
     g.add_node("save", nodes.save_analyses)
     g.add_node("summarize", nodes.summarize)
 
@@ -31,7 +40,8 @@ def build_graph():
         {"prepare": "prepare", "summarize": "summarize"})
     g.add_edge("prepare", "analyze")
     g.add_edge("analyze", "validate")
-    g.add_edge("validate", "save")
+    g.add_edge("validate", "remediate")
+    g.add_edge("remediate", "save")
     g.add_edge("save", "summarize")
     g.add_edge("summarize", END)
     return g.compile()
@@ -48,7 +58,9 @@ def run_analysis(run_id: str, repository: Optional[Repository] = None,
         llm: optional ChatOpenAI; defaults to env-configured LLM or None.
 
     Returns a JSON-friendly dict {run_id, results_loaded, analyses, summary,
-    trace, errors}. Also persists analyses to agent_error_analysis.
+    remediation, trace, errors}. Also persists analyses to
+    agent_error_analysis and remediation audit records to
+    agent_remediation_actions.
     """
     from agent.db.postgres import PostgresRepository
 
@@ -93,4 +105,5 @@ def build_summary_model(run_id: str, summary: dict) -> RunSummary:
         priority_actions=summary.get("priority_actions", []),
         counts_by_rule=summary.get("counts_by_rule", {}),
         counts_by_layer=summary.get("counts_by_layer", {}),
+        narrative=summary.get("narrative"),
     )

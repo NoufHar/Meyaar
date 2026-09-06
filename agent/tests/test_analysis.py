@@ -119,6 +119,56 @@ def test_summary_counts_and_priority(empty_repo, repo):
     assert any("critical" in a.lower() for a in s["priority_actions"])
 
 
+# ── executive narrative (saved per run at the end of the workflow) ──────────
+def test_template_narrative_is_saved_and_grounded(repo):
+    out = run_analysis(RUN_ID, repository=repo)
+    narrative = out["summary"]["narrative"]
+    assert narrative and "14 error" in narrative
+    assert "4 critical, 6 high, 4 medium" in narrative   # severity counts correct
+    # each error group is enumerated (rule names + layer qualifier)
+    assert "Findings: " in narrative
+    assert "1 Building Overlap (buildings)" in narrative
+    assert "1 Missing Geometry (buildings)" in narrative
+    assert "1 Missing Geometry (roads)" in narrative
+    assert "1 Road Overshoot (roads)" in narrative
+    # remediation outcome is part of the narrative (2 auto-fixed geometry
+    # repairs, 7 human-review, 5 no-action on the fixture run)
+    assert "2 automatically fixed" in narrative
+    assert "7 queued for human review" in narrative
+    assert "5 required no action" in narrative
+    stored = repo.fetch_run_summary(RUN_ID)
+    assert stored is not None
+    assert stored["narrative"] == narrative
+    assert stored["counts"]["remediation"]["auto_fixed"] == 2
+    assert stored["counts"]["errors"]["total_errors"] == 14
+
+
+def test_clean_run_saves_no_error_narrative(empty_repo):
+    out = run_analysis(RUN_ID, repository=empty_repo)
+    assert "no errors" in out["summary"]["narrative"]
+    stored = empty_repo.fetch_run_summary(RUN_ID)
+    assert stored is not None
+    assert stored["counts"]["errors"]["total_errors"] == 0
+
+
+def test_llm_narrative_used_when_returned(repo):
+    prose = ("This validation run identified 14 quality issues across "
+             "building, road and general layers; two invalid geometries "
+             "were repaired automatically and the remaining findings "
+             "require human review.")
+    out = run_analysis(RUN_ID, repository=repo, llm=StubLLM(prose))
+    assert out["summary"]["narrative"] == prose
+
+
+def test_json_output_rejected_as_narrative(repo):
+    # An LLM that answers JSON (as in the analyze step) must NOT become the
+    # narrative — the deterministic template takes over.
+    payload = json.dumps([{"result_id": 1, "status": "confirmed"}])
+    out = run_analysis(RUN_ID, repository=repo, llm=StubLLM(payload))
+    assert out["summary"]["narrative"].startswith("Validation run")
+    assert "error" in out["summary"]["narrative"]
+
+
 # ── database failure handling ───────────────────────────────────────────────
 class FailingRepo:
     """Repository that blows up on reads (simulated DB outage)."""

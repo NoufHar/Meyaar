@@ -11,26 +11,32 @@ Owner of this layer: Person 1 (AI Agent & Error Analysis). Code: `agent/`.
 ## 1. What this layer does (and does NOT)
 
 - **It reads** `public.validation_results` (produced by the PostGIS rule
-  engine: BLD001-004, RD001-005, GIS001-005).
-- **It writes** `public.agent_error_analysis` (its own table — never touches
-  your GIS tables; all reads are read-only).
-- **It returns** structured JSON per error + a run-level summary, and answers
-  chat questions grounded ONLY in that data.
+  engine: BLD001-004, RD001-005, GIS001-005) — read-only, guarded.
+- **It writes three of its OWN tables** (`agent/schema/*.sql`):
+  - `agent_error_analysis` — interpretation per error
+  - `agent_remediation_actions` — what the agent did about each error
+    (auto-fixed / queued for human / no action) + audit
+  - `agent_run_summaries` — one executive narrative per run
+- **One whitelisted mutation** on source layers: `apply_geometry_repair`
+  (transactional `ST_MakeValid`) — ONLY for policy-approved rules
+  (BLD003/RD004 invalid geometry). No other write ever touches your tables.
+- **It returns** structured JSON per error + a run-level summary + a
+  remediation audit, and answers chat questions grounded ONLY in that data.
 - **It never** detects geometry errors itself — the SQL engine is the source
-  of truth.
+  of truth, and the LLM never decides or executes fixes (see §4.2).
 
 Data contract in → out:
 
 ```
-public.validation_results            public.agent_error_analysis
- result_id      BIGINT      ─────►    result_id      (link)
- run_id         UUID                 run_id, layer_name, feature_id,
- layer_name                           rule_id, error_type, severity,
- feature_id                           status, explanation, cause,
- rule_id                              recommendation, human_review_required,
- error_type                           related_features jsonb,
- severity                             insufficient_context, agent_model,
- details                              analyzed_at
+public.validation_results            agent tables (agent/schema/)
+ result_id      BIGINT      ─────►    agent_error_analysis.result_id
+ run_id         UUID                  agent_remediation_actions.result_id
+ layer_name                           agent_run_summaries.run_id
+ feature_id
+ rule_id
+ error_type
+ severity
+ details
 ```
 
 ---
@@ -40,9 +46,13 @@ public.validation_results            public.agent_error_analysis
 ```
 engine run  ──creates──►  run_id (UUID)   ──►  validation_results rows
         run_id is the ONLY key you need.
-agent analyze(run_id)  ──writes──►  agent_error_analysis (idempotent upsert)
-GET analysis(run_id)   ──returns──►  summary + every analysis
-POST chat(run_id)      ──answers──►  grounded text + source ids
+agent analyze(run_id) ──writes──►  agent_error_analysis (idempotent upsert)
+                                  + agent_remediation_actions (auto-fix /
+                                    human-review decision per error)
+                                  + agent_run_summaries (executive narrative)
+GET analysis(run_id)     ──returns──►  summary (incl. narrative) + analyses
+GET remediation(run_id)  ──returns──►  audit: what was auto-fixed / queued
+POST chat(run_id)        ──answers──►  grounded text + source ids
 ```
 
 - Re-analyzing the same run is safe (upsert on `run_id + result_id`).
@@ -64,9 +74,15 @@ ORDER BY max(detected_at) DESC;
 
 ```bash
 cd ~/Desktop/tuwiq-capstone/Meyaar
-agent/.venv/bin/uvicorn agent.api.app:app --reload
+MEYAAR_DEV_NO_AUTH=*** agent/.venv/bin/uvicorn agent.api.app:app --reload
 # Chat UI: http://127.0.0.1:8000/   ·  OpenAPI docs: http://127.0.0.1:8000/docs
 ```
+
+> Auth note (main branch): the production app is `src/api/main.py` — it mounts
+> this router and protects every endpoint with login + run access. The
+> standalone app above is for local dev; set `MEYAAR_DEV_NO_AUTH=1` to bypass
+> auth there (never in production). Agent tests stub auth/access, so they run
+> anywhere without a backend.
 
 ### Mount into your backend (Person 2)
 
@@ -106,7 +122,8 @@ Regenerate whenever routes change:
 ## 4. Endpoints
 
 ### POST `/api/validation/{run_id}/analyze`
-Triggers analysis for a run (LLM or deterministic template — same schema).
+Triggers analysis AND remediation for a run (LLM or deterministic template —
+same schema). Idempotent: safe to re-run.
 ```bash
 curl -X POST http://127.0.0.1:8000/api/validation/316525f7-a7e3-43bd-81a5-7f442397dd1f/analyze
 ```
@@ -116,6 +133,10 @@ curl -X POST http://127.0.0.1:8000/api/validation/316525f7-a7e3-43bd-81a5-7f4423
   "total_errors_analyzed": 9,
   "message": "Analyzed 9 validation error(s)" }
 ```
+`status` is `completed`, or `completed_with_warnings` when a remediation was
+attempted and recorded as failed (e.g. a repair the column type cannot
+store — it is rolled back and logged, never fatal). The audit row explains
+why (see GET `/remediation`).
 > Slow? It runs synchronously today (fine for runs ≤ a few hundred errors —
 > the engine caps results at 500 per run). If the UI needs async, ask Person 1
 > to add a job/task wrapper.
@@ -137,7 +158,8 @@ Shape (full live sample in `agent/docs/_sample_response.json`):
       "Review heuristic topology candidates flagged for human review"
     ],
     "counts_by_rule": { "RD001": 2, "RD002": 4, "RD003": 2, "RD005": 1 },
-    "counts_by_layer": { "roads": 9 }
+    "counts_by_layer": { "roads": 9 },
+    "narrative": "The validation run flagged nine errors across the roads layer… (executive summary, persisted in agent_run_summaries)"
   },
   "analyses": [{
     "result_id": 95,
@@ -158,6 +180,41 @@ Shape (full live sample in `agent/docs/_sample_response.json`):
   }]
 }
 ```
+
+### GET `/api/validation/{run_id}/remediation`
+The **review queue / audit**: what the agent did about each error. Records are
+created by `/analyze` (one per `result_id`).
+```bash
+curl http://127.0.0.1:8000/api/validation/316525f7-a7e3-43bd-81a5-7f442397dd1f/remediation
+```
+Record shape (one per error, idempotent upsert):
+```json
+{ "run_id": "…", "result_id": 95, "layer_name": "roads",
+  "feature_id": "RD_INJ_NULL", "rule_id": "RD005",
+  "action": "human_review", "remediation_type": "human_review",
+  "status": "pending_review",
+  "issue": "Missing Geometry: Road geometry is NULL or empty.",
+  "reason": "…why auto-fix was (not) performed…",
+  "recommended_action": "Provide the missing road geometry from the authoritative source…",
+  "before_state": {}, "after_state": {},
+  "agent_model": "minimax/minimax-m3:free",
+  "human_review_required": true,
+  "executed_at": "…" }
+```
+UI MUST distinguish four states (trainer requirement — never silently drop):
+
+| action | status | meaning | UI treatment |
+|---|---|---|---|
+| `auto_fix` | `applied` | fixed automatically (BLD003/RD004 geometry repair only) | green "auto-fixed"; show before/after |
+| `human_review` | `pending_review` | queued for a human reviewer | amber "needs review"; show `recommended_action` |
+| `no_action` | `none` | nothing safe to do (layer-level / unknown rule) | grey; show `recommended_action` as guidance |
+| `auto_fix` | `failed` | auto repair attempted, rolled back + logged | red "failed"; reason explains why |
+
+`before_state`/`after_state` hold GeoJSON snapshots for applied repairs (empty
+dicts otherwise).
+
+> Chat is remediation-aware: it reads the same audit, so it will truthfully
+> answer "what was fixed automatically?" (see POST `/chat`).
 
 ### POST `/api/validation/{run_id}/chat`
 Grounded Q&A about a run. Requires the LLM key configured server-side
@@ -215,9 +272,14 @@ Suggested interactions:
 - Error list = `analyses[]`; filter chips by layer/rule/severity/status.
 - Clicking an error → zoom to `feature_id` in `layer_name` → show
   explanation + recommendation + severity + status.
-- "Run summary" panel = `summary` (totals, most common error, priority actions).
-- Candidate rows get a "review" workflow (mark false-positive/confirm) — that
-  write-back does not exist yet; coordinate if the UI needs it.
+- "Run summary" panel = `summary` (totals, most common error, priority
+  actions) + `summary.narrative` as the executive text at the top.
+- Remediation panel / review queue = GET `/remediation`: render the four
+  states (auto-fixed / pending review / no action / failed) per error — see
+  §4. `recommended_action` is the guidance to show a reviewer; a
+  `pending_review` row is where your "confirm / mark false-positive" workflow
+  plugs in (write-back does not exist yet — coordinate if the UI needs it).
+- Candidate rows (status `candidate`) get a "review" workflow — see §5.
 
 Live sample to model against: `agent/docs/_sample_response.json`
 (re-run to refresh: it's fetched from the real DB).
@@ -247,9 +309,11 @@ Chat UI reference implementation: `agent/api/static/index.html` (no build step).
 | `MEYAAR_ALLOW_LLM` | true | set false to force deterministic template (same JSON) |
 | `MEYAAR_TTS_ENGINE` | macos | CLI chat `--speak` TTS (macos/none) |
 
-DB access for the agent table:
+DB access for the agent tables (run all three against meyaar_db once):
 ```sql
-CREATE TABLE public.agent_error_analysis …   -- see agent/schema/agent_error_analysis.sql
+CREATE TABLE public.agent_error_analysis …          -- agent/schema/agent_error_analysis.sql
+CREATE TABLE public.agent_remediation_actions …     -- agent/schema/agent_remediation_actions.sql
+CREATE TABLE public.agent_run_summaries …           -- agent/schema/agent_run_summaries.sql
 ```
 
 ---

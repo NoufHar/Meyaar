@@ -1,9 +1,12 @@
-"""Grounded chat over a run's validation results and agent analyses.
+"""Grounded chat over a run's validation results, agent analyses and the
+remediation audit.
 
 The chat answers questions about ONE engine run using ONLY:
   - the run summary (counts, most common error, priority actions)
   - the stored agent analyses (explanations, causes, recommendations)
   - the rule registry (rule meaning, heuristic vs deterministic)
+  - the remediation audit (what was auto-fixed, what is queued for a human,
+    what failed) — so "what did the agent fix?" is answered truthfully.
 
 It never answers from general knowledge about features that are not in the
 run, and it never invents numbers. Sources returned are filtered to ids that
@@ -22,7 +25,7 @@ from agent.rules.registry import get_rule
 SYSTEM_PROMPT = (
     "You are Meyaar's chat assistant for a Saudi geospatial compliance run. "
     "Answer questions about THIS validation run using ONLY the context provided "
-    "(run summary + per-error analyses). Rules: "
+    "(run summary + per-error analyses + remediation audit). Rules: "
     "1) Never invent feature ids, counts, areas, or distances. "
     "2) If the question is about something not present in the context, say so "
     "   explicitly (e.g. 'that feature is not among this run's findings'). "
@@ -35,7 +38,18 @@ SYSTEM_PROMPT = (
     "   mention they need human review when relevant. "
     "5) Answer in the same language as the user's question. If the question "
     "   is Arabic, use clear Modern Standard Arabic while preserving rule IDs "
-    "   and feature IDs exactly. If it is English, answer in English."
+    "   and feature IDs exactly. If it is English, answer in English. "
+    "6) The context contains a 'remediation' audit of what the agent did about "
+    "   each error: action=auto_fix with status=applied means it was repaired "
+    "   automatically (only invalid-geometry fixes BLD003/RD004 are ever "
+    "   automatic); action=human_review with status=pending_review means it is "
+    "   queued for a human reviewer; action=auto_fix with status=failed means "
+    "   the automatic repair was attempted, rolled back and logged; "
+    "   action=no_action with status=none means nothing was done (layer-level "
+    "   guidance only). When the user asks what was fixed automatically or "
+    "   what still needs a human, answer from the remediation summary/items — "
+    "   do NOT claim something was auto-fixed unless the audit says applied, "
+    "   and do NOT claim something needs a human if it was already applied."
 )
 
 MAX_CHAT_ANALYSES = 100
@@ -76,7 +90,51 @@ def build_chat_context(repo: Repository, run_id: str) -> dict:
         ),
         "total_analyses": len(analyses),
         "rules": rules,
+        "remediation": _remediation_context(repo, run_id),
     }
+
+
+def _remediation_context(repo: Repository, run_id: str) -> dict:
+    """Compact remediation audit for the chat prompt.
+
+    Kept small on purpose: counts + one short item per record so the model
+    can truthfully say what was auto-fixed / queued / failed without burning
+    tokens on full before/after GeoJSON.
+    """
+    try:
+        records = repo.fetch_remediation_records(run_id) or []
+    except Exception:
+        # The audit table may not exist on older DBs — chat must not break.
+        return {"available": False, "summary": {}, "items": []}
+    applied = sum(1 for r in records
+                  if r.get("action") == "auto_fix" and r.get("status") == "applied")
+    failed = sum(1 for r in records if r.get("status") == "failed")
+    pending = sum(1 for r in records
+                  if r.get("action") == "human_review"
+                  and r.get("status") == "pending_review")
+    no_action = sum(1 for r in records
+                    if r.get("action") == "no_action")
+    summary = {
+        "total": len(records),
+        "auto_fixed": applied,
+        "failed": failed,
+        "pending_review": pending,
+        "no_action": no_action,
+    }
+    items = []
+    for r in records[:MAX_CHAT_ANALYSES]:
+        reason = str(r.get("reason") or "")[:180]
+        items.append({
+            "rule_id": r.get("rule_id"),
+            "feature_id": r.get("feature_id"),
+            "action": r.get("action"),
+            "status": r.get("status"),
+            "remediation_type": r.get("remediation_type"),
+            "issue": str(r.get("issue") or "")[:140],
+            "reason": reason,
+            "human_review_required": bool(r.get("human_review_required")),
+        })
+    return {"available": True, "summary": summary, "items": items}
 
 
 def _code_fence_strip(text: str) -> str:

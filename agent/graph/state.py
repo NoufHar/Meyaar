@@ -28,6 +28,11 @@ class AgentState:
     groups: list[PreparedGroup] = field(default_factory=list)
     analyses: list[ErrorAnalysis] = field(default_factory=list)
     summary: Optional[dict] = None
+    # result_id -> raw LLM "remediation_intent" dict (advisory only; the
+    # deterministic policy in agent/remediation/service.py decides).
+    remediation_intents: dict = field(default_factory=dict)
+    # audit records persisted to agent_remediation_actions (dicts).
+    remediation: list = field(default_factory=list)
     trace: list = field(default_factory=list)
     errors: list = field(default_factory=list)   # logged, never fatal to run
 
@@ -37,6 +42,7 @@ class AgentState:
             "results_loaded": len(self.results),
             "analyses": [a.model_dump() for a in self.analyses],
             "summary": self.summary,
+            "remediation": list(self.remediation),
             "trace": self.trace,
             "errors": self.errors,
         }

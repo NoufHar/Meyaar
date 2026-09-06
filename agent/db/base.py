@@ -11,9 +11,23 @@ from typing import Optional
 from agent.core.models import ErrorAnalysis, ValidationResult
 
 
+class RemediationError(RuntimeError):
+    """Raised when a whitelisted remediation operation cannot be executed
+    safely (missing feature, empty/invalid repair result, ...). The caller
+    records the failure and the transaction is rolled back."""
+
+
 class Repository(ABC):
-    """Read-only access to validation results + feature context, and write
-    access to the agent's OWN analysis table (never to source tables)."""
+    """Database boundary for the Error Analysis Agent.
+
+    Reads: validation results + PostGIS feature context + spatial
+    measurements (all read-only, guarded).
+
+    Writes: the agent's OWN tables (agent_error_analysis and
+    agent_remediation_actions), plus a small whitelist of remediation
+    operations (apply_geometry_repair) that mutate source layers through one
+    explicit, parameterized, transactional method — never free-form SQL.
+    """
 
     # ── reads (validation_results + PostGIS context) ─────────────────────
     @abstractmethod
@@ -41,7 +55,24 @@ class Repository(ABC):
         """Execute a read-only SQL statement and return rows as dicts.
         Raises ValueError on anything that is not a read-only query."""
 
-    # ── writes (agent_error_analysis only) ───────────────────────────────
+    # ── reads: spatial measurements (Part 1) ──────────────────────────────
+    @abstractmethod
+    def fetch_spatial_measurements(self, layer_name: str,
+                                   feature_ids: list[str],
+                                   other_feature_id: Optional[str] = None
+                                   ) -> dict[str, dict]:
+        """Structured PostGIS measurements per requested feature, keyed by
+        feature_id (missing ids are absent — never fabricated):
+
+            {feature_id, geometry_type, srid, is_valid, is_empty,
+             length_m, area_m2, vertex_count, centroid, bbox}
+
+        When `other_feature_id` is given, each entry additionally carries
+        relationship measurements: {other_feature_id, distance_m,
+        intersects, overlap_area_m2}. Inapplicable measurements are None
+        (a LineString has no area, a missing feature has no centroid)."""
+
+    # ── writes (agent tables + whitelisted remediation ops) ───────────────
     @abstractmethod
     def save_analyses(self, analyses: list[ErrorAnalysis]) -> int:
         """Insert/upsert agent analyses. Returns number saved."""
@@ -49,6 +80,38 @@ class Repository(ABC):
     @abstractmethod
     def fetch_analyses(self, run_id: str) -> list[ErrorAnalysis]:
         """Return previously saved analyses for a run."""
+
+    @abstractmethod
+    def apply_geometry_repair(self, layer_name: str, feature_id: str) -> dict:
+        """WHITELISTED source-table mutation: rebuild an invalid geometry
+        with ST_MakeValid in a transaction. Returns
+        {feature_id, layer_name, before, after} where before/after are
+        small JSON-able state dicts. Raises RemediationError (or the
+        underlying driver error) when the feature is missing or the repair
+        would not yield a valid, non-empty geometry — the transaction is
+        rolled back and the failure is recorded by the caller."""
+
+    @abstractmethod
+    def save_remediation_records(self, records: list[dict]) -> int:
+        """Insert/upsert agent_remediation_actions rows (idempotent on
+        (run_id, result_id)). Returns number saved."""
+
+    @abstractmethod
+    def fetch_remediation_records(self, run_id: str) -> list[dict]:
+        """Return previously saved remediation records for a run (dicts,
+        JSONB fields decoded)."""
+
+    # ── run-level executive summary (written at the end of the workflow) ──
+    @abstractmethod
+    def save_run_summary(self, run_id: str, narrative: str,
+                         agent_model: str = "",
+                         counts: Optional[dict] = None) -> bool:
+        """Upsert the run's executive narrative (agent_run_summaries)."""
+
+    @abstractmethod
+    def fetch_run_summary(self, run_id: str) -> Optional[dict]:
+        """Return the stored narrative for a run:
+        {run_id, narrative, agent_model, counts} or None."""
 
     # ── summary helpers ──────────────────────────────────────────────────
     def build_summary(self, results: list[ValidationResult],
