@@ -26,10 +26,24 @@ SYSTEM_PROMPT = (
     "1) Never invent feature ids, counts, areas, or distances. "
     "2) If the question is about something not present in the context, say so "
     "   explicitly (e.g. 'that feature is not among this run's findings'). "
-    "3) Be concise and practical; prefer citing findings as RULE@feature. "
+    "3) Be concise and practical. Group findings by error type and severity, "
+    "and state the count in each group. Present individual findings as "
+    "'the first error', 'the second error', and so on. Do not include file "
+    "names, UUIDs, feature IDs, result IDs, or rule IDs in the visible answer "
+    "unless the user explicitly asks for technical identifiers or exact details. "
     "4) Heuristic rules (RD001/RD002) are candidates, NOT confirmed errors — "
-    "   mention they need human review when relevant."
+    "   mention they need human review when relevant. "
+    "5) Answer in the same language as the user's question. If the question "
+    "   is Arabic, use clear Modern Standard Arabic while preserving rule IDs "
+    "   and feature IDs exactly. If it is English, answer in English."
 )
+
+MAX_CHAT_ANALYSES = 100
+
+
+def _question_language(question: str) -> str:
+    """Choose the response language from the user's actual question."""
+    return "Arabic" if any("\u0600" <= char <= "\u06ff" for char in question) else "English"
 
 
 def build_chat_context(repo: Repository, run_id: str) -> dict:
@@ -52,7 +66,15 @@ def build_chat_context(repo: Repository, run_id: str) -> dict:
     return {
         "run_id": run_id,
         "summary": summary,
-        "analyses": [a.model_dump() for a in analyses],
+        "analyses": [
+            a.model_dump()
+            for a in analyses[:MAX_CHAT_ANALYSES]
+        ],
+        "analyses_in_context": min(
+            len(analyses),
+            MAX_CHAT_ANALYSES,
+        ),
+        "total_analyses": len(analyses),
         "rules": rules,
     }
 
@@ -78,8 +100,14 @@ def answer_question(repo: Repository, run_id: str, question: str,
 
     context = build_chat_context(repo, run_id)
     payload = json.dumps(context, ensure_ascii=False, default=str)
+    response_language = _question_language(question)
     prompt = (
-        "Context (JSON): " + payload +
+        "System instructions:\n" + SYSTEM_PROMPT +
+        "\n\nRequired response language: " + response_language + ". "
+        "The answer field MUST be written in that language. "
+        "Keep technical IDs unchanged internally, but omit them from the visible "
+        "answer unless the user explicitly requests them. Summarize repeated "
+        "findings by category instead of listing long identifiers.\n\nContext (JSON): " + payload +
         "\n\nUser question: " + question +
         "\n\nReply STRICT JSON only: "
         '{"answer": "your answer", "sources": ["RULE@feature", "..."]} '

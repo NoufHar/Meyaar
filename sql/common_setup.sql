@@ -24,6 +24,13 @@ CREATE INDEX IF NOT EXISTS idx_validation_results_run
 CREATE INDEX IF NOT EXISTS idx_validation_results_rule
     ON public.validation_results(rule_id, layer_name);
 
+CREATE TABLE IF NOT EXISTS public.validation_reviews (
+    result_id BIGINT PRIMARY KEY REFERENCES public.validation_results(result_id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'confirmed', 'resolved', 'false_positive')),
+    comment TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS public.meyaar_required_attributes (
     layer_name   TEXT NOT NULL,
     column_name  TEXT NOT NULL,

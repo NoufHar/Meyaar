@@ -17,6 +17,7 @@ from agent.chat import answer_question
 from agent.core.models import AnalyzeResponse, AnalysisListResponse, RunSummary
 from agent.db.base import Repository
 from agent.graph.builder import build_summary_model, run_analysis
+from src.api.auth import current_user, database_engine, ensure_app_tables, require_run_access
 
 router = APIRouter(tags=["validation-analysis"])
 
@@ -40,7 +41,10 @@ def get_repository() -> Repository:
 @router.post("/validation/{run_id}/analyze",
              response_model=AnalyzeResponse,
              summary="Trigger Error Analysis for a validation run")
-def trigger_analysis(run_id: UUID4, repo: Repository = Depends(get_repository)):
+def trigger_analysis(run_id: UUID4, repo: Repository = Depends(get_repository), user: dict = Depends(current_user)):
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        require_run_access(connection, user, str(run_id))
     out = run_analysis(str(run_id), repository=repo)
     n = len(out.get("analyses", []))
     if out.get("errors"):
@@ -57,7 +61,10 @@ def trigger_analysis(run_id: UUID4, repo: Repository = Depends(get_repository)):
 @router.get("/validation/{run_id}/analysis",
             response_model=AnalysisListResponse,
             summary="Retrieve Error Analyses for a validation run")
-def get_analysis(run_id: UUID4, repo: Repository = Depends(get_repository)):
+def get_analysis(run_id: UUID4, repo: Repository = Depends(get_repository), user: dict = Depends(current_user)):
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        require_run_access(connection, user, str(run_id))
     try:
         analyses = repo.fetch_analyses(str(run_id))
     except Exception as exc:
@@ -81,12 +88,15 @@ def get_analysis(run_id: UUID4, repo: Repository = Depends(get_repository)):
              response_model=ChatResponse,
              summary="Ask a grounded question about a run's engine results")
 def chat_about_run(run_id: UUID4, body: ChatRequest,
-                   repo: Repository = Depends(get_repository)):
+                   repo: Repository = Depends(get_repository), user: dict = Depends(current_user)):
     """Chat endpoint: answers from the run's stored analyses + summary only.
 
     Requires an LLM key (MEYAAR_LLM_API_KEY) — analysis endpoints work
     without one, chat does not.
     """
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        require_run_access(connection, user, str(run_id))
     try:
         out = answer_question(repo, str(run_id), body.question)
     except ValueError as exc:      # no analyses yet for this run

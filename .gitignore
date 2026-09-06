@@ -43,6 +43,7 @@ wandb/
 
 # Generated/temp
 outputs/
+output/
 tmp/
 *.log
 
