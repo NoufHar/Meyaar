@@ -7,6 +7,7 @@ from fastapi import (
     HTTPException,
     UploadFile,
 )
+from fastapi.responses import FileResponse
 
 from src.api.schemas import (
     ImageInspectionResponse,
@@ -25,6 +26,8 @@ from src.vision.vision_pipeline import run_vision_pipeline
 
 from agent.api.router import router as analysis_router
 
+from src.api.map_routes import router as map_router
+
 from src.api.vector_pipeline import (
     InvalidVectorFileError,
     VectorProcessingError,
@@ -42,6 +45,8 @@ app.include_router(
     prefix="/api",
 )
 
+app.include_router(map_router)
+
 MAX_IMAGE_SIZE = 25 * 1024 * 1024
 
 SUPPORTED_IMAGE_EXTENSIONS = {
@@ -56,6 +61,22 @@ SUPPORTED_IMAGE_EXTENSIONS = {
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+FRONTEND_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "agent"
+    / "api"
+    / "static"
+    / "index.html"
+)
+
+@app.get("/", include_in_schema=False)
+def frontend():
+    return FileResponse(
+        FRONTEND_PATH,
+        media_type="text/html",
+    )
 
 
 @app.post("/images/inspect", response_model=ImageInspectionResponse)
