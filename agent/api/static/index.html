@@ -3,174 +3,217 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meyaar — Error Analysis Chat</title>
+<title>Meyaar — Geospatial Quality Dashboard</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
 <style>
-  :root { --accent:#4338ca; --bg:#f6f5f1; --card:#fff; --text:#1e1b4b; --muted:#6b7280; }
-  * { box-sizing: border-box; }
-  body { margin:0; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         background:var(--bg); color:var(--text); }
-  .wrap { max-width:860px; margin:0 auto; padding:24px 16px 60px; }
-  header h1 { font-size:22px; margin:0 0 2px; }
-  header p  { color:var(--muted); margin:0 0 18px; font-size:13px; }
-  .card { background:var(--card); border:1px solid #e5e7eb; border-radius:12px;
-          padding:16px; margin-bottom:14px; }
-  label { font-size:12px; font-weight:600; display:block; margin:0 0 4px; color:var(--muted); }
-  input, textarea { width:100%; padding:9px 11px; border:1px solid #d1d5db; border-radius:8px;
-                    font:inherit; }
-  textarea { resize:vertical; min-height:64px; }
-  .row { display:flex; gap:8px; margin-top:10px; align-items:center; }
-  button { border:none; border-radius:8px; padding:9px 16px; font:inherit; cursor:pointer; }
-  #askBtn { background:var(--accent); color:#fff; }
-  #askBtn:disabled { opacity:.6; cursor:wait; }
-  #status { color:var(--muted); font-size:13px; }
-  #error { color:#b91c1c; font-size:13px; white-space:pre-wrap; }
-  #answer { line-height:1.5; }
-  #answer:empty { display:none; }
-  .chip { display:inline-block; background:#eef2ff; color:var(--accent); font-size:12px;
-          border-radius:999px; padding:3px 10px; margin:2px 4px 2px 0; }
-  .hint { font-size:12px; color:var(--muted); }
-  a { color:var(--accent); }
+  :root {
+    --navy:#12365a; --navy-2:#0b2947; --blue:#2563eb; --bg:#f4f7fb;
+    --card:#fff; --text:#172033; --muted:#64748b; --border:#dbe3ee;
+    --green:#15803d; --green-bg:#ecfdf3; --red:#dc2626; --red-bg:#fef2f2;
+    --amber:#b45309; --amber-bg:#fffbeb; --gray:#475569; --gray-bg:#f1f5f9;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  header { background:linear-gradient(135deg,var(--navy-2),var(--navy)); color:white; padding:18px 24px; position:sticky; top:0; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,.12); }
+  header .inner { max-width:1500px; margin:auto; display:flex; justify-content:space-between; align-items:center; gap:18px; }
+  h1 { font-size:24px; margin:0; } header p { margin:3px 0 0; opacity:.8; font-size:13px; }
+  .run-chip { font-size:12px; padding:7px 10px; border:1px solid rgba(255,255,255,.25); border-radius:999px; max-width:460px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wrap { max-width:1500px; margin:auto; padding:20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; box-shadow:0 2px 8px rgba(15,23,42,.04); }
+  .upload { padding:18px; margin-bottom:18px; }
+  .upload-grid { display:grid; grid-template-columns:1fr 180px auto; gap:12px; align-items:end; }
+  label { display:block; font-weight:700; font-size:12px; color:var(--muted); margin:0 0 6px; text-transform:uppercase; letter-spacing:.03em; }
+  input, select, textarea { width:100%; padding:10px 11px; border:1px solid #cbd5e1; border-radius:9px; font:inherit; background:white; }
+  input[type=file] { padding:8px; }
+  button { border:0; border-radius:9px; padding:10px 14px; font:inherit; font-weight:700; cursor:pointer; }
+  .primary { background:var(--blue); color:white; } .secondary { background:#e8eef7; color:var(--navy-2); }
+  button:disabled { opacity:.55; cursor:wait; }
+  .file-meta { margin-top:10px; font-size:13px; color:var(--muted); }
+  .status { margin-top:10px; padding:10px 12px; border-radius:9px; display:none; font-size:13px; }
+  .status.show { display:block; } .status.ok { background:var(--green-bg); color:var(--green); } .status.err { background:var(--red-bg); color:var(--red); } .status.busy { background:#eff6ff; color:#1d4ed8; }
+  .summary { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-bottom:18px; }
+  .metric { padding:15px; } .metric .label { color:var(--muted); font-size:11px; font-weight:800; text-transform:uppercase; } .metric .value { font-size:28px; font-weight:800; margin-top:4px; }
+  .dashboard { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(380px,.9fr); gap:18px; align-items:start; }
+  .map-card { overflow:hidden; } #map { height:670px; width:100%; }
+  .map-toolbar { padding:12px 14px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .map-hint { font-size:12px; color:var(--muted); } .legend { display:flex; gap:12px; font-size:11px; color:var(--muted); }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:4px; vertical-align:-1px; }
+  .dot-critical { background:#991b1b; } .dot-high { background:#dc2626; } .dot-medium { background:#f59e0b; } .dot-low { background:#64748b; }
+  .panel { padding:14px; } .panel + .panel { margin-top:18px; }
+  .panel h2 { font-size:16px; margin:0 0 12px; } .panel h3 { font-size:13px; margin:14px 0 7px; }
+  .filters { display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px; }
+  .filters select { font-size:12px; padding:8px; }
+  .findings { max-height:400px; overflow:auto; display:flex; flex-direction:column; gap:8px; margin-top:10px; }
+  .finding { padding:11px; border:1px solid var(--border); border-left:5px solid #94a3b8; border-radius:9px; cursor:pointer; background:white; }
+  .finding:hover { background:#f8fafc; } .finding.critical { border-left-color:#991b1b; } .finding.high { border-left-color:#dc2626; } .finding.medium { border-left-color:#f59e0b; } .finding.low { border-left-color:#64748b; }
+  .finding .top { display:flex; justify-content:space-between; gap:8px; } .finding strong { font-size:13px; } .finding small { color:var(--muted); }
+  .badges { display:flex; gap:5px; flex-wrap:wrap; margin-top:6px; } .badge { display:inline-block; padding:3px 7px; border-radius:999px; font-size:10px; font-weight:800; text-transform:uppercase; }
+  .b-critical,.b-high { color:#991b1b; background:#fee2e2; } .b-medium { color:#92400e; background:#fef3c7; } .b-low { color:#475569; background:#e2e8f0; }
+  .b-confirmed { color:#166534; background:#dcfce7; } .b-candidate { color:#92400e; background:#fef3c7; } .b-informational,.b-insufficient_context { color:#475569; background:#e2e8f0; }
+  .detail-empty { color:var(--muted); font-size:13px; } .detail-row { margin:10px 0; } .detail-row .k { font-size:11px; font-weight:800; text-transform:uppercase; color:var(--muted); } .detail-row .v { margin-top:3px; line-height:1.5; font-size:13px; }
+  .callout { padding:10px 12px; background:var(--amber-bg); color:#78350f; border:1px solid #fde68a; border-radius:9px; font-size:12px; margin:10px 0; }
+  .actions { margin:0; padding-left:18px; } .actions li { margin:5px 0; font-size:13px; }
+  .chat { margin-top:18px; padding:14px; } .chat-box { min-height:90px; padding:10px; border:1px solid var(--border); border-radius:9px; background:#f8fafc; line-height:1.5; white-space:pre-wrap; font-size:13px; }
+  .chat-row { display:grid; grid-template-columns:1fr auto auto auto; gap:8px; margin-top:9px; } .chat-row textarea { min-height:44px; resize:vertical; }
+  .sources { margin-top:8px; display:flex; gap:5px; flex-wrap:wrap; } .source { background:#e0e7ff; color:#3730a3; border-radius:999px; padding:4px 8px; font-size:10px; cursor:pointer; }
+  .footer-note { margin-top:14px; font-size:11px; color:var(--muted); }
+  @media (max-width:1000px) { .dashboard { grid-template-columns:1fr; } #map { height:520px; } .summary { grid-template-columns:repeat(3,1fr); } }
+  @media (max-width:700px) { .upload-grid { grid-template-columns:1fr; } .summary { grid-template-columns:repeat(2,1fr); } .chat-row { grid-template-columns:1fr 1fr 1fr; } .chat-row textarea { grid-column:1/-1; } header .inner { align-items:flex-start; flex-direction:column; } }
 </style>
 </head>
 <body>
+<header><div class="inner"><div><h1>Meyaar</h1><p>Geospatial data quality &amp; compliance dashboard</p></div><div id="runChip" class="run-chip">No validation run loaded</div></div></header>
 <div class="wrap">
-  <header>
-    <h1>Meyaar — Error Analysis Chat</h1>
-    <p>Ask questions about a validation run. Answers are grounded in the run&rsquo;s engine results &amp; agent analyses.</p>
-  </header>
-
-  <div class="card">
-    <label for="runId">Run ID (UUID from public.validation_results)</label>
-    <input id="runId" placeholder="e.g. 8f0a1b2c-3d4e-4f5a-8b9c-0d1e2f3a4b5c" autocomplete="off">
-    <label for="question" style="margin-top:10px">Question</label>
-    <textarea id="question" placeholder="e.g. What should I fix first?"></textarea>
-    <div class="row">
-      <button id="askBtn">Ask</button>
-      <button id="analyzeBtn" title="Run error analysis for this run first">Analyze run</button>
-      <button id="micBtn" title="Speak your question (browser speech recognition)">🎤</button>
-      <button id="speakBtn" title="Read the answer aloud (browser TTS)">🔊</button>
-      <span id="status"></span>
+  <section class="card upload">
+    <div class="upload-grid">
+      <div><label for="file">Geospatial file</label><input id="file" type="file" accept=".geojson,.json,.gpkg,.csv,.parquet,.zip,.shp" /></div>
+      <div><label for="layer">Layer type</label><select id="layer"><option value="">Auto-detect</option><option value="roads">Roads</option><option value="buildings">Buildings</option></select></div>
+      <button id="processBtn" class="primary">Upload &amp; Validate</button>
     </div>
-    <div id="voiceStatus" class="hint"></div>
-    <div id="error"></div>
-  </div>
+    <div id="fileMeta" class="file-meta">Supported: GeoJSON, GeoPackage, CSV, GeoParquet, zipped Shapefile.</div>
+    <div id="status" class="status"></div>
+  </section>
 
-  <div class="card">
-    <label>Answer</label>
-    <div id="answer"></div>
-  </div>
+  <section class="summary">
+    <div class="card metric"><div class="label">Total findings</div><div id="mTotal" class="value">—</div></div>
+    <div class="card metric"><div class="label">Critical</div><div id="mCritical" class="value">—</div></div>
+    <div class="card metric"><div class="label">High</div><div id="mHigh" class="value">—</div></div>
+    <div class="card metric"><div class="label">Needs review</div><div id="mReview" class="value">—</div></div>
+    <div class="card metric"><div class="label">Most common</div><div id="mCommon" class="value" style="font-size:16px;line-height:1.25">—</div></div>
+  </section>
 
-  <p class="hint">API docs: <a href="/docs">/docs</a> &nbsp;·&nbsp; info: <a href="/api/info">/api/info</a> &nbsp;·&nbsp;
-  New run? <code>bash agent/scripts/live_test.sh</code> prints fresh run ids.</p>
+  <section class="dashboard">
+    <div class="card map-card">
+      <div class="map-toolbar"><div><strong>Interactive map</strong><div id="mapHint" class="map-hint">Upload a dataset to display its geometry.</div></div><div class="legend"><span><i class="dot dot-critical"></i>Critical</span><span><i class="dot dot-high"></i>High</span><span><i class="dot dot-medium"></i>Medium</span></div></div>
+      <div id="map"></div>
+    </div>
+
+    <div>
+      <section class="card panel">
+        <h2>Run summary</h2>
+        <div id="priorityBlock"><div class="detail-empty">No run loaded.</div></div>
+      </section>
+      <section class="card panel">
+        <h2>Findings</h2>
+        <div class="filters"><select id="filterSeverity"><option value="all">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select><select id="filterStatus"><option value="all">All statuses</option><option value="confirmed">Confirmed</option><option value="candidate">Needs review</option><option value="informational">Informational</option><option value="insufficient_context">Insufficient context</option></select><select id="filterLayer"><option value="all">All layers</option><option value="roads">Roads</option><option value="buildings">Buildings</option></select></div>
+        <div id="findings" class="findings"><div class="detail-empty">No findings yet.</div></div>
+      </section>
+      <section class="card panel">
+        <h2>Finding details</h2>
+        <div id="details" class="detail-empty">Select a finding from the list or click a highlighted feature on the map.</div>
+      </section>
+    </div>
+  </section>
+
+  <section class="card chat">
+    <h2 style="font-size:16px;margin:0 0 8px">Ask Meyaar</h2>
+    <div id="chatAnswer" class="chat-box">Ask a question about the current validation run.</div>
+    <div id="sources" class="sources"></div>
+    <div class="chat-row"><textarea id="question" placeholder="Example: What should I fix first?"></textarea><button id="micBtn" class="secondary" title="Speak your question">🎤</button><button id="speakBtn" class="secondary" title="Read the answer aloud">🔊</button><button id="askBtn" class="primary">Ask</button></div>
+  </section>
+  <div class="footer-note">Meyaar findings are validation results, not official GeoSA certification. Candidate findings require human review.</div>
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script>
 const $ = id => document.getElementById(id);
-async function post(url, body) {
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {"Content-Type": "application/json"},
-    body: JSON.stringify(body || {})
-  });
-  if (!r.ok) {
-    let detail = r.statusText;
-    try { const j = await r.json(); detail = j.detail || JSON.stringify(j); } catch (_) {}
-    throw new Error("HTTP " + r.status + ": " + detail);
-  }
-  return r.json();
-}
-async function ask() {
-  if ("speechSynthesis" in window) window.speechSynthesis.cancel();  // stop reading
-  $("speakBtn").textContent = "🔊";
-  const runId = $("runId").value.trim();
-  const q = $("question").value.trim();
-  $("error").textContent = "";
-  if (!runId || !q) { $("error").textContent = "Enter a run ID and a question."; return; }
-  $("askBtn").disabled = true; $("status").textContent = "asking…";
-  try {
-    const out = await post("/api/validation/" + encodeURIComponent(runId) + "/chat", {question: q});
-    $("answer").innerHTML = escapeHtml(out.answer);
-    const src = (out.sources || []).map(s => '<span class="chip">' + escapeHtml(s) + "</span>").join("");
-    $("answer").insertAdjacentHTML("beforeend", src ? "<br><br>Sources: " + src : "");
-    $("status").textContent = "";
-  } catch (e) {
-    $("error").textContent = "Chat failed. " + e.message +
-      "\nTip: run analysis first if this run has no results yet (button above), and ensure the LLM key is set in agent/.env.";
-  } finally {
-    $("askBtn").disabled = false;
-  }
-}
-async function analyzeRun() {
-  const runId = $("runId").value.trim();
-  $("error").textContent = "";
-  if (!runId) { $("error").textContent = "Enter a run ID."; return; }
-  $("analyzeBtn").disabled = true; $("status").textContent = "analyzing…";
-  try {
-    const out = await post("/api/validation/" + encodeURIComponent(runId) + "/analyze");
-    $("status").textContent = "analyzed " + out.total_errors_analyzed + " error(s) — you can chat now.";
-  } catch (e) {
-    $("error").textContent = "Analyze failed. " + e.message;
-  } finally {
-    $("analyzeBtn").disabled = false;
-  }
-}
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-}
+let runId = null;
+let analyses = [];
+let geojsonLayer = null;
+let mapFeatureLayers = new Map();
 
-/* ── Voice: STT (mic) + TTS (read answer) via browser APIs ─────────────── */
-const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-let rec = null;
-function setVoiceStatus(msg) { $("voiceStatus").textContent = msg; }
+const map = L.map('map', { zoomControl:true }).setView([24.7136, 46.6753], 10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution:'&copy; OpenStreetMap contributors' }).addTo(map);
 
-async function startMic() {
-  if (!SpeechRec) { setVoiceStatus("Voice input not supported in this browser (need Chrome/Edge/Brave)."); return; }
-  window.__micError = false;
-  if (!rec) {
-    rec = new SpeechRec();
-    rec.lang = "en-US";
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    rec.onresult = e => { $("question").value = e.results[0][0].transcript; setVoiceStatus(""); };
-    rec.onerror = e => { window.__micError = true; setVoiceStatus("Mic error: " + e.error); };
-    rec.onend = () => { $("micBtn").textContent = "🎤"; if (!window.__micError) setVoiceStatus(""); };
-  }
-  if (rec.running) { rec.stop(); $("micBtn").textContent = "🎤"; return; }
+function setStatus(message, type='busy') { const el=$('status'); el.textContent=message; el.className='status show '+type; }
+function clearStatus() { $('status').className='status'; $('status').textContent=''; }
+function esc(value) { return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function badge(value, prefix='b-') { return '<span class="badge '+prefix+esc(String(value).toLowerCase())+'">'+esc(String(value).replace('_',' '))+'</span>'; }
+function severityRank(s) { return ({critical:4,high:3,medium:2,low:1})[s] || 0; }
+function analysisForFeature(featureId) { return analyses.filter(a => String(a.feature_id || '') === String(featureId)); }
+function highestSeverity(items) { return items.reduce((best,a)=> severityRank(a.severity)>severityRank(best?.severity) ? a : best, null); }
+
+$('file').addEventListener('change', () => { const f=$('file').files[0]; $('fileMeta').textContent=f ? `${f.name} • ${(f.size/1024/1024).toFixed(2)} MB` : 'Supported: GeoJSON, GeoPackage, CSV, GeoParquet, zipped Shapefile.'; });
+$('processBtn').addEventListener('click', processUpload);
+$('filterSeverity').addEventListener('change', renderFindings);
+$('filterStatus').addEventListener('change', renderFindings);
+$('filterLayer').addEventListener('change', renderFindings);
+$('askBtn').addEventListener('click', askChat);
+$('micBtn').addEventListener('click', startMic);
+$('speakBtn').addEventListener('click', speakAnswer);
+$('question').addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') askChat(); });
+
+async function processUpload() {
+  const file=$('file').files[0]; if(!file){ setStatus('Choose a geospatial file first.','err'); return; }
+  const fd=new FormData(); fd.append('file',file); if($('layer').value) fd.append('layer_type',$('layer').value);
+  $('processBtn').disabled=true; setStatus('Uploading file, running validation, and generating agent analysis…','busy');
   try {
-    // getUserMedia not strictly required by SpeechRecognition in Chromium,
-    // but requesting it surfaces the mic permission prompt clearly.
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      const stream = await navigator.mediaDevices.getUserMedia({audio: true});
-      stream.getTracks().forEach(t => t.stop());
-    }
-  } catch (e) { setVoiceStatus("Microphone permission denied: " + e.name); return; }
-  rec.start();
-  $("micBtn").textContent = "🔴";
-  setVoiceStatus("Listening… speak your question");
+    const r=await fetch('/vectors/process',{method:'POST',body:fd});
+    const data=await readJson(r);
+    if(!r.ok) throw new Error(data.detail || 'Processing failed.');
+    runId=data.run_id; $('runChip').textContent=`Run: ${runId}`;
+    await loadRun(data.layer_name);
+    setStatus(`Completed: ${data.layer_name} • ${data.validation.total_errors ?? 0} finding(s).`,'ok');
+  } catch(e) { setStatus(e.message,'err'); }
+  finally { $('processBtn').disabled=false; }
 }
-async function speakAnswer() {
-  const text = $("answer").innerText || $("answer").textContent || "";
-  if (!("speechSynthesis" in window)) { setVoiceStatus("TTS not supported in this browser."); return; }
-  // toggle: if already speaking, stop
-  if (window.speechSynthesis.speaking) {
-    window.speechSynthesis.cancel();
-    $("speakBtn").textContent = "🔊";
-    setVoiceStatus("Stopped.");
-    return;
-  }
-  if (!text) { setVoiceStatus("Nothing to read yet — ask a question first."); return; }
-  const u = new SpeechSynthesisUtterance(text.replace(/Sources:[\s\S]*$/, ""));
-  u.rate = 1.05;
-  setVoiceStatus("Speaking… (click 🔊 to stop)");
-  u.onstart = () => { $("speakBtn").textContent = "⏹"; };
-  u.onend = u.onerror = () => { $("speakBtn").textContent = "🔊"; setVoiceStatus(""); };
-  window.speechSynthesis.speak(u);
+async function loadRun(layerName) {
+  const analysisResp=await fetch(`/api/validation/${encodeURIComponent(runId)}/analysis`);
+  const analysisData=await readJson(analysisResp); if(!analysisResp.ok) throw new Error(analysisData.detail || 'Could not load analysis.');
+  analyses=analysisData.analyses || [];
+  renderSummary(analysisData.summary || {});
+  renderFindings();
+  await loadMap(layerName || analysisData.analyses?.[0]?.layer_name || 'roads');
 }
-$("askBtn").addEventListener("click", ask);
-$("analyzeBtn").addEventListener("click", analyzeRun);
-$("micBtn").addEventListener("click", startMic);
-$("speakBtn").addEventListener("click", speakAnswer);
-$("question").addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") ask(); });
+async function loadMap(layerName) {
+  mapFeatureLayers=new Map();
+  if(geojsonLayer){ map.removeLayer(geojsonLayer); geojsonLayer=null; }
+  $('mapHint').textContent=`Loading ${layerName} geometry…`;
+  const r=await fetch(`/vectors/${encodeURIComponent(runId)}/geojson?layer=${encodeURIComponent(layerName)}&limit=5000`);
+  const data=await readJson(r); if(!r.ok) throw new Error(data.detail || 'Could not load map data.');
+  geojsonLayer=L.geoJSON(data,{ style: featureStyle, onEachFeature: onEachFeature, pointToLayer: pointStyle }).addTo(map);
+  geojsonLayer.eachLayer(layer => { const id=layer.feature?.properties?.feature_id; if(id) mapFeatureLayers.set(String(id),layer); });
+  if(geojsonLayer.getLayers().length){ map.fitBounds(geojsonLayer.getBounds(),{padding:[25,25],maxZoom:16}); }
+  $('mapHint').textContent=`${data.feature_count} feature(s) displayed • click a feature to inspect findings`;
+}
+function featureStyle(feature) {
+  const items=analysisForFeature(feature.properties.feature_id); const top=highestSeverity(items); const hasCandidate=items.some(a=>a.status==='candidate');
+  if(!top) return {color:'#64748b',weight:1.5,fillOpacity:0.15};
+  const c={critical:'#991b1b',high:'#dc2626',medium:'#f59e0b',low:'#64748b'}[top.severity] || '#64748b';
+  return {color:hasCandidate && top.severity==='high' ? '#d97706' : c,weight:hasCandidate?4:3,fillOpacity:.32};
+}
+function pointStyle(feature,latlng){ const style=featureStyle(feature); return L.circleMarker(latlng,{radius:6,...style}); }
+function onEachFeature(feature,layer){ const id=feature.properties.feature_id; const items=analysisForFeature(id); if(items.length){ layer.bindTooltip(`${esc(id)} • ${items.length} finding(s)`); layer.on('click',()=>{ const a=items[0]; selectAnalysis(a); }); } else { layer.bindTooltip(esc(id)); } }
+function renderSummary(s) {
+  $('mTotal').textContent=s.total_errors ?? 0; $('mCritical').textContent=s.critical_errors ?? 0; $('mHigh').textContent=s.high_errors ?? 0; $('mReview').textContent=s.human_review_pending ?? 0; $('mCommon').textContent=s.most_common_error || 'None';
+  const actions=s.priority_actions || []; $('priorityBlock').innerHTML=actions.length?'<ul class="actions">'+actions.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<div class="detail-empty">No priority actions.</div>';
+}
+function renderFindings(){
+  const sev=$('filterSeverity').value, status=$('filterStatus').value, layer=$('filterLayer').value;
+  const filtered=analyses.filter(a => (sev==='all'||a.severity===sev)&&(status==='all'||a.status===status)&&(layer==='all'||a.layer_name===layer));
+  $('findings').innerHTML=filtered.length?filtered.map(a=>`<div class="finding ${esc(a.severity)}" data-result="${a.result_id}"><div class="top"><strong>${esc(a.error_type)}</strong><small>${esc(a.feature_id || 'no feature')}</small></div><div class="badges">${badge(a.severity)} ${badge(a.status)} <span class="badge" style="color:#475569;background:#eef2ff">${esc(a.rule_id)}</span></div><div style="margin-top:6px;font-size:12px;color:#475569">${esc(a.explanation || '')}</div></div>`).join(''):'<div class="detail-empty">No findings match the current filters.</div>';
+  document.querySelectorAll('.finding').forEach(el=>el.addEventListener('click',()=>{ const a=analyses.find(x=>String(x.result_id)===el.dataset.result); if(a) selectAnalysis(a); }));
+}
+function selectAnalysis(a){
+  $('details').innerHTML=`<div class="detail-row"><div class="k">Finding</div><div class="v"><strong>${esc(a.error_type)}</strong> • ${badge(a.severity)} ${badge(a.status)} ${esc(a.rule_id)}</div></div>
+  <div class="detail-row"><div class="k">Feature</div><div class="v">${esc(a.feature_id || 'Not tied to a feature')}</div></div>
+  <div class="detail-row"><div class="k">Explanation</div><div class="v">${esc(a.explanation || 'No explanation available.')}</div></div>
+  <div class="detail-row"><div class="k">Cause</div><div class="v">${esc(a.cause || 'Not provided.')}</div></div>
+  <div class="detail-row"><div class="k">Recommendation</div><div class="v">${esc(a.recommendation || 'Not provided.')}</div></div>
+  ${a.human_review_required?'<div class="callout"><strong>Human review required.</strong> This is a candidate finding and must not be treated as confirmed.</div>':''}
+  ${(a.related_features||[]).length?'<div class="detail-row"><div class="k">Related features</div><div class="v">'+a.related_features.map(esc).join(', ')+'</div></div>':''}`;
+  if(a.feature_id) focusFeature(a.feature_id);
+}
+function focusFeature(featureId){ const layer=mapFeatureLayers.get(String(featureId)); if(!layer) return; try { const bounds=layer.getBounds ? layer.getBounds() : null; if(bounds && bounds.isValid()) map.fitBounds(bounds.pad(.5),{maxZoom:18}); else if(layer.getLatLng) map.setView(layer.getLatLng(),18); layer.openTooltip?.(); } catch(_){} }
+
+async function askChat(){ if(!runId){ $('chatAnswer').textContent='Upload and process a dataset first.'; return; } const q=$('question').value.trim(); if(!q)return; $('askBtn').disabled=true; $('chatAnswer').textContent='Thinking…'; $('sources').innerHTML=''; try { const r=await fetch(`/api/validation/${encodeURIComponent(runId)}/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})}); const data=await readJson(r); if(!r.ok)throw new Error(data.detail||'Chat failed.'); $('chatAnswer').textContent=data.answer||''; renderSources(data.sources||[]); } catch(e){ $('chatAnswer').textContent='Chat failed: '+e.message; } finally { $('askBtn').disabled=false; } }
+function renderSources(sources){ $('sources').innerHTML=sources.map(s=>`<span class="source">${esc(s)}</span>`).join(''); document.querySelectorAll('.source').forEach(el=>el.addEventListener('click',()=>{ const [rule,feature]=el.textContent.split('@'); const a=analyses.find(x=>x.rule_id===rule && (!feature || String(x.feature_id)===feature)) || analyses.find(x=>x.rule_id===rule); if(a)selectAnalysis(a); })); }
+async function readJson(r){ try{return await r.json();}catch(_){return {detail:r.statusText||'Request failed.'};} }
+
+let recognition=null;
+const SpeechRec=window.SpeechRecognition||window.webkitSpeechRecognition;
+function startMic(){ if(!SpeechRec){ $('chatAnswer').textContent='Voice input is not supported by this browser. Use Chrome/Edge/Brave.'; return; } if(!recognition){ recognition=new SpeechRec(); recognition.lang='en-US'; recognition.interimResults=false; recognition.maxAlternatives=1; recognition.onresult=e=>$('question').value=e.results[0][0].transcript; recognition.onerror=e=>$('chatAnswer').textContent='Mic error: '+e.error; } recognition.start(); }
+function speakAnswer(){ if(!('speechSynthesis' in window)){ return; } if(window.speechSynthesis.speaking){ window.speechSynthesis.cancel(); return; } const text=$('chatAnswer').innerText.trim(); if(text) window.speechSynthesis.speak(new SpeechSynthesisUtterance(text)); }
 </script>
 </body>
 </html>
