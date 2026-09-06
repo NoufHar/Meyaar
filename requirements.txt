@@ -19,6 +19,8 @@ datasets
 
 # Vision / images
 Pillow
+rasterio
+reportlab
 
 # RAG / embeddings
 sentence-transformers

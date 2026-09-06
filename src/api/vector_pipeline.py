@@ -1,7 +1,8 @@
+import json
 import os
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from sqlalchemy import bindparam, create_engine, text
 
 import zipfile
 from pathlib import Path
@@ -9,6 +10,7 @@ from tempfile import TemporaryDirectory
 
 from agent.graph.builder import run_analysis
 from src.insertion.insertion import (
+    add_feature_id,
     detect_layer_type,
     insert_vector_data,
     load_vector_file,
@@ -16,6 +18,7 @@ from src.insertion.insertion import (
 from src.validation.validation_tools import (
     run_rules_for_layer,
 )
+from src.quality import compliance_score_from_summary
 
 load_dotenv()
 
@@ -35,6 +38,75 @@ class InvalidVectorFileError(ValueError):
 
 class VectorProcessingError(RuntimeError):
     pass
+
+
+def _build_layer_geojson(gdf) -> dict:
+    layer = add_feature_id(gdf)
+
+    if layer.crs is None:
+        layer = layer.set_crs("EPSG:4326")
+    elif layer.crs.to_epsg() != 4326:
+        layer = layer.to_crs("EPSG:4326")
+
+    return json.loads(
+        layer[["feature_id", "geometry"]].to_json()
+    )
+
+
+def _attach_error_geometries(
+    engine,
+    layer_name: str,
+    errors: list[dict],
+) -> None:
+    if layer_name not in {"roads", "buildings"} or not errors:
+        return
+
+    feature_ids = sorted({
+        str(error["feature_id"])
+        for error in errors
+        if error.get("feature_id") is not None
+    })
+
+    if not feature_ids:
+        return
+
+    query = text(
+        f"""
+        SELECT
+            feature_id::text AS feature_id,
+            ST_AsGeoJSON(
+                CASE
+                    WHEN ST_SRID(geometry) = 4326
+                        THEN geometry
+                    WHEN ST_SRID(geometry) = 0
+                        THEN ST_SetSRID(geometry, 4326)
+                    ELSE ST_Transform(geometry, 4326)
+                END
+            ) AS geometry
+        FROM public.{layer_name}
+        WHERE geometry IS NOT NULL
+          AND feature_id::text IN :feature_ids
+        """
+    ).bindparams(
+        bindparam("feature_ids", expanding=True)
+    )
+
+    with engine.connect() as connection:
+        rows = connection.execute(
+            query,
+            {"feature_ids": feature_ids},
+        ).mappings().all()
+
+    geometries = {
+        row["feature_id"]: json.loads(row["geometry"])
+        for row in rows
+        if row["geometry"]
+    }
+
+    for error in errors:
+        error["geometry"] = geometries.get(
+            str(error.get("feature_id"))
+        )
 
 
 def _safe_extract_shapefile(
@@ -162,6 +234,7 @@ def process_vector_upload(
             ) from error
 
         detection = detect_layer_type(gdf)
+        layer_geojson = _build_layer_geojson(gdf)
 
         if requested_layer:
             layer_name = requested_layer
@@ -213,6 +286,12 @@ def process_vector_upload(
                 )
             )
 
+        _attach_error_geometries(
+            engine=engine,
+            layer_name=layer_name,
+            errors=validation.get("errors", []),
+        )
+
         run_id = validation["run_id"]
 
         analysis = run_analysis(run_id)
@@ -225,4 +304,6 @@ def process_vector_upload(
             "insertion": insertion,
             "validation": validation,
             "analysis": analysis,
+            "compliance_score": compliance_score_from_summary(validation.get("summary", []), insertion.get("inserted_rows", 0)),
+            "layer_geojson": layer_geojson,
         }

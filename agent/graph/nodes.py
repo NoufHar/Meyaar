@@ -24,6 +24,8 @@ from agent.tools import get_rule_definition
 
 logger = logging.getLogger(__name__)
 
+MAX_LLM_ITEMS_PER_GROUP = 25
+
 _ID_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z_]{2,}[0-9]{2,})")
 
 
@@ -258,7 +260,7 @@ def _repair_analysis(raw: dict, r: ValidationResult, rule: Optional[dict],
 def _group_prompt(g: PreparedGroup) -> str:
     rule_txt = json.dumps(g.rule, ensure_ascii=False) if g.rule else "UNKNOWN RULE"
     items = []
-    for r in g.items:
+    for r in g.items[:MAX_LLM_ITEMS_PER_GROUP]:
         ctx = g.contexts.get(r.feature_id)
         related = {fid: g.contexts.get(fid) for fid in _related_for(g, r)}
         items.append({

@@ -11,7 +11,11 @@ from groq import Groq
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+def _groq_client():
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("GROQ_API_KEY is not configured for audio downloads.")
+    return Groq(api_key=api_key)
 
 
 def generate_audio_report_text(
@@ -72,7 +76,7 @@ REPORT:
 {json.dumps(report, ensure_ascii=False, default=str)}
 """
 
-    response = client.chat.completions.create(
+    response = _groq_client().chat.completions.create(
         model="openai/gpt-oss-20b",
         messages=[
             {
@@ -131,7 +135,7 @@ def create_tts_chunk(
     Convert one text chunk to WAV.
     """
 
-    response = client.audio.speech.create(
+    response = _groq_client().audio.speech.create(
         model="canopylabs/orpheus-arabic-saudi",
         voice=voice,
         input=text,
@@ -139,6 +143,28 @@ def create_tts_chunk(
     )
 
     response.write_to_file(output_path)
+
+
+def synthesize_speech_bytes(text, voice="lulwa"):
+    """Generate a downloadable Arabic WAV for one agent response."""
+    if not os.getenv("GROQ_API_KEY"):
+        raise RuntimeError("GROQ_API_KEY is not configured for audio downloads.")
+
+    chunks = split_text(text[:4000], max_chars=190)
+    if not chunks:
+        raise ValueError("No text was provided for audio generation.")
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_root = Path(temp_dir)
+        chunk_paths = []
+        for index, chunk in enumerate(chunks, start=1):
+            chunk_path = temp_root / f"chunk_{index}.wav"
+            create_tts_chunk(text=chunk, output_path=chunk_path, voice=voice)
+            chunk_paths.append(chunk_path)
+
+        output_path = temp_root / "agent-explanation.wav"
+        merge_wav_files(chunk_paths, output_path)
+        return output_path.read_bytes()
 
 
 def merge_wav_files(files, output_path):
