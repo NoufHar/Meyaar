@@ -8,7 +8,6 @@ import {
 } from "@/lib/api";
 
 import type {
-  LayerType,
   ProcessingResult,
 } from "@/types/analysis";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -27,6 +26,25 @@ interface UploadPanelProps {
 type UploadMode = "vector" | "image";
 export interface BatchUploadItem { result: ProcessingResult; file: File; mode: UploadMode; }
 
+async function splitMixedGeoJson(files: File[]): Promise<File[]> {
+  const expanded: File[] = [];
+  for (const file of files) {
+    if (!/\.geo?json$/i.test(file.name)) { expanded.push(file); continue; }
+    try {
+      const collection = JSON.parse(await file.text()) as { type?: string; features?: Array<{ geometry?: { type?: string } | null }>; [key: string]: unknown };
+      if (collection.type !== "FeatureCollection" || !Array.isArray(collection.features)) { expanded.push(file); continue; }
+      const roads = collection.features.filter((feature) => /LineString$/i.test(feature.geometry?.type ?? ""));
+      const buildings = collection.features.filter((feature) => /Polygon$/i.test(feature.geometry?.type ?? ""));
+      const unsupported = collection.features.length - roads.length - buildings.length;
+      if (!roads.length || !buildings.length || unsupported > 0) { expanded.push(file); continue; }
+      const base = file.name.replace(/\.geo?json$/i, "");
+      expanded.push(new File([JSON.stringify({ ...collection, name: `${base}_roads`, features: roads })], `${base}_roads.geojson`, { type: "application/geo+json" }));
+      expanded.push(new File([JSON.stringify({ ...collection, name: `${base}_buildings`, features: buildings })], `${base}_buildings.geojson`, { type: "application/geo+json" }));
+    } catch { expanded.push(file); }
+  }
+  return expanded;
+}
+
 
 export default function UploadPanel({
   onResult,
@@ -34,9 +52,6 @@ export default function UploadPanel({
   const { t } = useLanguage();
   const [mode, setMode] =
     useState<UploadMode>("vector");
-
-  const [layerType, setLayerType] =
-    useState<LayerType>("roads");
 
   const [files, setFiles] = useState<File[]>([]);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -92,18 +107,20 @@ export default function UploadPanel({
     setError(null);
 
     try {
+      const workingFiles = mode === "vector" ? await splitMixedGeoJson(files) : files;
+      if (workingFiles.length !== files.length) setFiles(workingFiles);
       let finalResult: ProcessingResult | null = null;
       const completed: BatchUploadItem[] = [];
-      for (let index = 0; index < files.length; index += 1) {
-        const selectedFile = files[index];
+      for (let index = 0; index < workingFiles.length; index += 1) {
+        const selectedFile = workingFiles[index];
         setCurrentFile(index);
-        const updateProgress = (filePercent: number) => setProgress(Math.round(((index + filePercent / 100) / files.length) * 100));
+        const updateProgress = (filePercent: number) => setProgress(Math.round(((index + filePercent / 100) / workingFiles.length) * 100));
         finalResult = mode === "vector"
-          ? await processVectorFile(selectedFile, layerType, updateProgress)
+          ? await processVectorFile(selectedFile, undefined, updateProgress)
           : await analyzeMapImage(selectedFile, updateProgress);
         completed.push({ result: finalResult, file: selectedFile, mode });
       }
-      if (finalResult) onResult(finalResult, files[files.length - 1], mode, completed);
+      if (finalResult) onResult(finalResult, workingFiles[workingFiles.length - 1], mode, completed);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -170,32 +187,7 @@ export default function UploadPanel({
         onSubmit={handleSubmit}
         className="space-y-5"
       >
-        {mode === "vector" && (
-          <div>
-            <label
-              htmlFor="layer-type"
-              className="mb-2 block text-sm font-semibold text-slate-800"
-            >
-              {t("Layer type")}
-            </label>
-
-            <select
-              id="layer-type"
-              value={layerType}
-              onChange={(event) =>
-                setLayerType(
-                  event.target.value as LayerType,
-                )
-              }
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-            >
-              <option value="roads">{t("Roads")}</option>
-              <option value="buildings">
-                {t("Buildings")}
-              </option>
-            </select>
-          </div>
-        )}
+        {mode === "vector" && <div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3"><span className="mt-0.5 text-blue-600">✦</span><div><p className="text-sm font-bold text-blue-900">Automatic layer detection</p><p className="mt-0.5 text-xs leading-5 text-blue-700">MEYAAR identifies each file as roads or buildings from its geometry.</p></div></div>}
 
         <div>
           <label
