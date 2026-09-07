@@ -1,3 +1,4 @@
+// Shared frontend contracts for analyses, authentication, teams, and reports.
 import type {
   FeatureCollection,
   Geometry,

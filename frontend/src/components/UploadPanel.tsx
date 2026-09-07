@@ -1,5 +1,7 @@
 "use client";
 
+// Handles single files and folders, including progress and automatic layer detection.
+
 import { useEffect, useRef, useState } from "react";
 
 import {

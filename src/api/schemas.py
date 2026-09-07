@@ -1,5 +1,7 @@
 from typing import Any, Literal
 
+# Public API contracts keep validation consistent between routes and clients.
+
 from pydantic import BaseModel, Field
 
 

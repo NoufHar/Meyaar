@@ -1,5 +1,7 @@
 "use client";
 
+// Team workspace for memberships, invitations, roles, and employee activity.
+
 import { useEffect, useState } from "react";
 import { activateTeam, createTeam, createTeamUser, deleteTeam, getMe, getTeamDashboard, interpretNewUser, inviteTeamMember, listTeams, removeTeamMember, updateTeamMemberRole } from "@/lib/api";
 import type { AuthUser, CreatedTeamUser, NewUserPreview, TeamDashboardData, TeamMembership } from "@/types/analysis";

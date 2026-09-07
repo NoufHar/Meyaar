@@ -1,3 +1,4 @@
+// Central browser client for authenticated MEYAAR backend requests.
 import type {
   LayerType,
   VectorProcessingResponse,

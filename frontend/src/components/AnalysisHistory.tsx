@@ -1,5 +1,7 @@
 "use client";
 
+// Lists saved analyses and exports selected results as one JSON or PDF package.
+
 import { useEffect, useState } from "react";
 import { downloadBatchJson, downloadBatchPdf, listAnalyses, loadAnalysis } from "@/lib/api";
 import type { ProcessingResult, SavedAnalysisSummary } from "@/types/analysis";

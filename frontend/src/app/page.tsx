@@ -1,5 +1,7 @@
 "use client";
 
+// Main workspace controller: authentication, navigation, and active analysis state.
+
 import { useEffect, useMemo, useState } from "react";
 import AgentChat from "@/components/AgentChat";
 import AppSidebar, { type AppView } from "@/components/AppSidebar";

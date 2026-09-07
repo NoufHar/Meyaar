@@ -1,3 +1,4 @@
+# Vector upload pipeline: load, classify, store, validate, and explain GIS data.
 import json
 import os
 import re
