@@ -213,6 +213,20 @@ UI MUST distinguish four states (trainer requirement — never silently drop):
 `before_state`/`after_state` hold GeoJSON snapshots for applied repairs (empty
 dicts otherwise).
 
+Drawing before/after on the map (Leaflet-ready):
+- Both states contain a string field `geojson` — a complete GeoJSON geometry
+  (`{"type":"Polygon","coordinates":[...]}`) ready to parse:
+  `JSON.parse(record.before_state.geojson)` / `...after_state.geojson`.
+- Suggested UX: draw `before` as a red/striped outline ("before — invalid"),
+  draw `after` as a green fill ("after — repaired"), overlay both on the same
+  feature location, or show a before→after toggle. Only records with
+  `action=auto_fix` carry real snapshots; `failed` records keep the `before`
+  but no `after` (the repair was rolled back).
+- Coordinates are EPSG:4326 (lon/lat) — Leaflet `L.geoJSON(...)` accepts them
+  directly; react-leaflet works the same with a `<GeoJSON data=... />`.
+- The map can also read `analysis[].feature_id` + `layer_name` to zoom to the
+  repaired feature (see §6).
+
 > Chat is remediation-aware: it reads the same audit, so it will truthfully
 > answer "what was fixed automatically?" (see POST `/chat`).
 
@@ -279,6 +293,8 @@ Suggested interactions:
   §4. `recommended_action` is the guidance to show a reviewer; a
   `pending_review` row is where your "confirm / mark false-positive" workflow
   plugs in (write-back does not exist yet — coordinate if the UI needs it).
+- Auto-fix before/after: parse `before_state.geojson` / `after_state.geojson`
+  and overlay both on the map (see "Drawing before/after" in §4).
 - Candidate rows (status `candidate`) get a "review" workflow — see §5.
 
 Live sample to model against: `agent/docs/_sample_response.json`
