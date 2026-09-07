@@ -19,6 +19,7 @@ from fastapi import (
 )
 from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
@@ -76,6 +77,16 @@ app = FastAPI(
 app.include_router(
     analysis_router,
     prefix="/api",
+)
+
+# The browser uploads large datasets directly to FastAPI so long analyses are
+# not cut off by the Next.js development proxy.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
