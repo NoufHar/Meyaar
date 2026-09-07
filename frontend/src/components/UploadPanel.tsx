@@ -187,7 +187,7 @@ export default function UploadPanel({
         onSubmit={handleSubmit}
         className="space-y-5"
       >
-        {mode === "vector" && <div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3"><span className="mt-0.5 text-blue-600">✦</span><div><p className="text-sm font-bold text-blue-900">Automatic layer detection</p><p className="mt-0.5 text-xs leading-5 text-blue-700">MEYAAR identifies each file as roads or buildings from its geometry.</p></div></div>}
+        {mode === "vector" && <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2"><span className="text-xs text-blue-600">✦</span><div><p className="text-xs font-bold text-blue-900">Automatic layer detection</p><p className="text-[11px] leading-4 text-blue-700">MEYAAR identifies roads and buildings from geometry.</p></div></div>}
 
         <div>
           <label
@@ -199,11 +199,11 @@ export default function UploadPanel({
 
           <label
             htmlFor="dataset-file"
-            className="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 text-center transition hover:border-blue-400 hover:bg-blue-50"
+            className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center transition hover:border-blue-400 hover:bg-blue-50"
           >
-            <span className="text-3xl">↑</span>
+            <span className="text-2xl">↑</span>
 
-            <span className="mt-3 text-sm font-semibold text-slate-900">
+            <span className="mt-2 text-sm font-semibold text-slate-900">
               {files.length
                 ? files.length === 1 ? files[0].name : `${files.length} files selected`
                 : t("Choose a file to upload")}
@@ -232,8 +232,8 @@ export default function UploadPanel({
             }}
             className="sr-only"
           />
-          <div className="mt-3 flex items-center justify-center gap-2"><span className="text-xs text-slate-400">or</span><label htmlFor="dataset-folder" className="cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">Choose a folder</label></div>
-          <input ref={folderInputRef} id="dataset-folder" type="file" multiple accept={acceptedFormats} onChange={(event) => { const supported = Array.from(event.target.files ?? []).filter((item) => acceptedFormats.split(",").some((extension) => item.name.toLowerCase().endsWith(extension))); setFiles(supported); setError(supported.length ? null : "The folder does not contain supported files for this analysis type."); }} className="sr-only" />
+          <div className="mt-2 flex items-center justify-center gap-2"><span className="text-[11px] text-slate-400">or</span><label htmlFor="dataset-folder" className="cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100">Choose a folder</label></div>
+          <input ref={folderInputRef} id="dataset-folder" type="file" multiple accept={acceptedFormats} onChange={(event) => { const supported = Array.from(event.target.files ?? []).filter((item) => acceptedFormats.split(",").some((extension) => item.name.toLowerCase().endsWith(extension)) && !(mode === "vector" && /\.(png|jpe?g|tiff?|webp)\.json$/i.test(item.name))); setFiles(supported); setError(supported.length ? null : "The folder does not contain supported files for this analysis type."); }} className="sr-only" />
         </div>
 
         {error && (

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 from dotenv import load_dotenv
 from sqlalchemy import bindparam, create_engine, text
@@ -183,6 +184,12 @@ def process_vector_upload(
     requested_layer: str | None = None,
 ) -> dict:
     extension = Path(filename).suffix.lower()
+
+    if re.search(r"\.(png|jpe?g|tiff?|webp)\.json$", filename, re.IGNORECASE):
+        raise InvalidVectorFileError(
+            "This JSON file is image metadata, not vector geospatial data. "
+            "Upload the related image in Map image mode instead."
+        )
 
     if extension not in SUPPORTED_VECTOR_EXTENSIONS:
         raise InvalidVectorFileError(
