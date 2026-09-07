@@ -19,11 +19,13 @@ interface UploadPanelProps {
     result: ProcessingResult,
     file: File,
     mode: UploadMode,
+    batch: BatchUploadItem[],
   ) => void;
 }
 
 
 type UploadMode = "vector" | "image";
+export interface BatchUploadItem { result: ProcessingResult; file: File; mode: UploadMode; }
 
 
 export default function UploadPanel({
@@ -91,6 +93,7 @@ export default function UploadPanel({
 
     try {
       let finalResult: ProcessingResult | null = null;
+      const completed: BatchUploadItem[] = [];
       for (let index = 0; index < files.length; index += 1) {
         const selectedFile = files[index];
         setCurrentFile(index);
@@ -98,8 +101,9 @@ export default function UploadPanel({
         finalResult = mode === "vector"
           ? await processVectorFile(selectedFile, layerType, updateProgress)
           : await analyzeMapImage(selectedFile, updateProgress);
+        completed.push({ result: finalResult, file: selectedFile, mode });
       }
-      if (finalResult) onResult(finalResult, files[files.length - 1], mode);
+      if (finalResult) onResult(finalResult, files[files.length - 1], mode, completed);
     } catch (requestError) {
       setError(
         requestError instanceof Error
