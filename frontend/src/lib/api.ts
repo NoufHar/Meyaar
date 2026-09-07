@@ -14,6 +14,7 @@ import type {
   NewUserPreview,
   CreatedTeamUser,
   TeamCommandPlan,
+  UserDirectoryEntry,
 } from "@/types/analysis";
 
 
@@ -158,6 +159,8 @@ export async function changePassword(currentPassword: string, newPassword: strin
 export async function deleteTeam(teamId: string): Promise<AuthUser> { return parseResponse(await fetch(`${API_BASE_URL}/teams/${teamId}`, { method: "DELETE", headers: authHeaders() })); }
 export async function interpretNewUser(instruction: string): Promise<NewUserPreview> { return parseResponse(await fetch(`${API_BASE_URL}/team/users/interpret`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ instruction }) })); }
 export async function interpretTeamCommands(instruction: string): Promise<TeamCommandPlan> { return parseResponse(await fetch(`${API_BASE_URL}/team/commands/interpret`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ instruction }) })); }
+export async function searchUserDirectory(query: string): Promise<UserDirectoryEntry[]> { return parseResponse(await fetch(`${API_BASE_URL}/team/user-directory?query=${encodeURIComponent(query)}`, { headers: authHeaders() })); }
+export async function addExistingTeamMember(teamId: string, userId: string, role: "leader" | "member"): Promise<UserDirectoryEntry & { role: string }> { return parseResponse(await fetch(`${API_BASE_URL}/teams/${teamId}/members`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ user_id: userId, role }) })); }
 export async function createTeamUser(preview: NewUserPreview): Promise<CreatedTeamUser> { return parseResponse(await fetch(`${API_BASE_URL}/team/users`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(preview) })); }
 
 export async function getErrorReview(resultId: number): Promise<ErrorReview> {

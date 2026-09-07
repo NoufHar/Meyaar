@@ -15,6 +15,7 @@ from fastapi import (
     Header,
     HTTPException,
     UploadFile,
+    Query,
 )
 from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
@@ -41,6 +42,7 @@ from src.api.schemas import (
     BatchReportRequest,
     TeamJoinRequest,
     TeamRoleUpdate,
+    ExistingTeamMemberAddRequest,
     PasswordChangeRequest,
     NewUserInterpretRequest,
     NewUserCreateRequest,
@@ -303,6 +305,42 @@ def member_work_dashboard(member_id: str, user: dict = Depends(current_user)):
         """), {"team_id": user["team_id"], "member_id": member_id}).mappings().all()
     active_seconds = int(member["active_seconds_today"] or 0)
     return {"member": {**dict(member), "user_id": str(member["user_id"]), "work_hours_today": round(active_seconds / 3600, 1), "work_percentage": min(round(active_seconds / 28800 * 100), 100)}, "summary": dict(summary), "recent_analyses": [{**dict(row), "analysis_id": str(row["analysis_id"]), "created_at": row["created_at"].isoformat()} for row in recent]}
+
+
+@app.get("/team/user-directory")
+def search_user_directory(query: str = Query(min_length=2, max_length=100), user: dict = Depends(current_user)):
+    """Return a limited candidate list so the assistant can resolve duplicate names."""
+    if user.get("role") != "manager" or not user.get("team_id"):
+        raise HTTPException(status_code=403, detail="Manager access is required.")
+    term = f"%{query.strip().lower()}%"
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        rows = connection.execute(text("""
+            SELECT u.user_id, u.name, u.email, u.username
+            FROM public.app_users u
+            WHERE (LOWER(u.name) LIKE :term OR LOWER(COALESCE(u.email, '')) LIKE :term OR LOWER(COALESCE(u.username, '')) LIKE :term)
+              AND NOT EXISTS (SELECT 1 FROM public.team_memberships m WHERE m.team_id = :team_id AND m.user_id = u.user_id)
+            ORDER BY LOWER(u.name), LOWER(COALESCE(u.email, '')) LIMIT 10
+        """), {"term": term, "team_id": user["team_id"]}).mappings().all()
+    return [{**dict(row), "user_id": str(row["user_id"])} for row in rows]
+
+
+@app.post("/teams/{team_id}/members", status_code=201)
+def add_existing_team_member(team_id: str, body: ExistingTeamMemberAddRequest, user: dict = Depends(current_user)):
+    """Add an existing account without exposing or resetting its credentials."""
+    if user.get("role") != "manager" or user.get("team_id") != team_id:
+        raise HTTPException(status_code=403, detail="Only this team's manager can add existing members.")
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        candidate = connection.execute(text("SELECT user_id, name, email FROM public.app_users WHERE user_id = :user_id"), {"user_id": body.user_id}).mappings().first()
+        if not candidate:
+            raise HTTPException(status_code=404, detail="User account not found.")
+        exists = connection.execute(text("SELECT 1 FROM public.team_memberships WHERE team_id = :team_id AND user_id = :user_id"), {"team_id": team_id, "user_id": body.user_id}).scalar()
+        if exists:
+            raise HTTPException(status_code=409, detail="This user is already a member of the team.")
+        connection.execute(text("INSERT INTO public.team_memberships (team_id, user_id, role) VALUES (:team_id, :user_id, :role)"), {"team_id": team_id, "user_id": body.user_id, "role": body.role})
+        connection.execute(text("""INSERT INTO public.audit_logs (actor_user_id, team_id, action, target_user_id, details) VALUES (:actor, :team, 'existing_member_added', :target, CAST(:details AS JSONB))"""), {"actor": user["user_id"], "team": team_id, "target": body.user_id, "details": json.dumps({"role": body.role})})
+    return {"user_id": str(candidate["user_id"]), "name": candidate["name"], "email": candidate["email"], "role": body.role}
 
 
 @app.patch("/teams/{team_id}/members/{member_id}/role")

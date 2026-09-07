@@ -119,6 +119,11 @@ class TeamRoleUpdate(BaseModel):
     role: Literal["leader", "member"]
 
 
+class ExistingTeamMemberAddRequest(BaseModel):
+    user_id: str = Field(min_length=1, max_length=100)
+    role: Literal["leader", "member"] = "member"
+
+
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)

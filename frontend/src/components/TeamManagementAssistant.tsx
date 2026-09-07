@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { activateTeam, createTeam, createTeamUser, deleteTeam, getMe, interpretTeamCommands, removeTeamMember, updateTeamMemberRole } from "@/lib/api";
-import type { AuthUser, NewUserPreview, TeamCommandPlan, TeamDashboardData } from "@/types/analysis";
+import { activateTeam, addExistingTeamMember, createTeam, createTeamUser, deleteTeam, getMe, interpretTeamCommands, removeTeamMember, searchUserDirectory, updateTeamMemberRole } from "@/lib/api";
+import type { AuthUser, NewUserPreview, TeamCommandPlan, TeamDashboardData, UserDirectoryEntry } from "@/types/analysis";
 
 type Props = { data: TeamDashboardData; onClose: () => void; onComplete: (user: AuthUser) => void };
 
@@ -14,6 +14,9 @@ export default function TeamManagementAssistant({ data, onClose, onComplete }: P
   const [plan, setPlan] = useState<TeamCommandPlan | null>(null);
   const [memberSelections, setMemberSelections] = useState<Record<number, string>>({});
   const [deleteConfirmations, setDeleteConfirmations] = useState<Record<number, string>>({});
+  const [directoryMatches, setDirectoryMatches] = useState<Record<number, UserDirectoryEntry[]>>({});
+  const [existingSelections, setExistingSelections] = useState<Record<number, string>>({});
+  const [createNew, setCreateNew] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [results, setResults] = useState<string[] | null>(null);
@@ -39,6 +42,14 @@ export default function TeamManagementAssistant({ data, onClose, onComplete }: P
         const matches = candidates(action);
         if ((action.action === "remove" || action.action === "change_role") && matches.length === 1) selections[index] = matches[0].user_id;
       });
+      const searches = await Promise.all(next.actions.map(async (action, index) => {
+        if (action.action !== "add" || !action.name || action.email) return [index, []] as const;
+        try { return [index, await searchUserDirectory(action.name)] as const; }
+        catch { return [index, []] as const; }
+      }));
+      setDirectoryMatches(Object.fromEntries(searches));
+      setExistingSelections({});
+      setCreateNew({});
       setMemberSelections(selections); setPlan(next); setInstruction("");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The assistant could not understand the request.");
@@ -64,9 +75,16 @@ export default function TeamManagementAssistant({ data, onClose, onComplete }: P
           await createTeam(action.team_name.trim()); activeUser = await getMe(); activeTeamId = activeUser.team_id;
           completed.push(`Created team: ${action.team_name}`);
         } else if (action.action === "add") {
-          if (!action.name?.trim() || !action.email?.trim()) throw new Error(`A name and personal email are required for action ${index + 1}.`);
-          const created = await createTeamUser(action);
-          completed.push(`Added ${created.name} as ${created.role}. Credentials were sent privately to ${created.personal_email}.`);
+          const existingId = existingSelections[index];
+          if (existingId) {
+            if (!activeTeamId) throw new Error("Create or select a team first.");
+            const added = await addExistingTeamMember(activeTeamId, existingId, action.role);
+            completed.push(`Added existing account ${added.name} as ${action.role}.`);
+          } else {
+            if (!action.name?.trim() || !action.email?.trim()) throw new Error(`Choose an existing account or enter a personal email for action ${index + 1}.`);
+            const created = await createTeamUser(action);
+            completed.push(`Created and added ${created.name} as ${created.role}. Credentials were sent privately to ${created.personal_email}.`);
+          }
         } else if (action.action === "remove") {
           if (!activeTeamId || !memberSelections[index]) throw new Error(`Choose the member for action ${index + 1}.`);
           const selected = data.members.find((member) => member.user_id === memberSelections[index]);
@@ -90,7 +108,7 @@ export default function TeamManagementAssistant({ data, onClose, onComplete }: P
     } finally { setBusy(false); }
   }
 
-  function resetChat() { setPlan(null); setResults(null); setSentMessage(""); setError(""); }
+  function resetChat() { setPlan(null); setResults(null); setSentMessage(""); setError(""); setDirectoryMatches({}); setExistingSelections({}); setCreateNew({}); }
 
   return (
     <div className="fixed inset-0 z-[6000] flex items-center justify-center bg-slate-950/55 p-3" role="dialog" aria-modal="true">
@@ -109,7 +127,10 @@ export default function TeamManagementAssistant({ data, onClose, onComplete }: P
             <article key={index} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="flex items-center gap-2"><span className="flex size-6 items-center justify-center rounded-full bg-blue-100 text-xs font-black text-blue-700">{index + 1}</span><h3 className="text-sm font-bold capitalize">{action.action.replaceAll("_", " ")}</h3></div>
               {action.action === "create_team" && <input value={action.team_name ?? ""} onChange={(event) => updateAction(index, { team_name: event.target.value })} className="mt-2 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Team name" />}
-              {action.action === "add" && <div className="mt-2 grid gap-2 sm:grid-cols-3"><input value={action.name ?? ""} onChange={(event) => updateAction(index, { name: event.target.value })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Name" /><input type="email" value={action.email ?? ""} onChange={(event) => updateAction(index, { email: event.target.value })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Personal email" /><select value={action.role} onChange={(event) => updateAction(index, { role: event.target.value as "member" | "leader" })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"><option value="member">Member</option><option value="leader">Team Leader</option></select></div>}
+              {action.action === "add" && <div className="mt-2 space-y-2">
+                {(directoryMatches[index]?.length ?? 0) > 0 && !createNew[index] && <div className="rounded-lg border border-blue-100 bg-blue-50 p-3"><p className="mb-2 text-xs font-semibold text-blue-800">I found matching accounts. Which one do you mean?</p><div className="space-y-1.5">{directoryMatches[index].map((entry) => <label key={entry.user_id} className="flex cursor-pointer items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm"><input type="radio" name={`existing-${index}`} checked={existingSelections[index] === entry.user_id} onChange={() => setExistingSelections({ ...existingSelections, [index]: entry.user_id })} className="accent-blue-600" /><span><strong>{entry.name}</strong><span className="ml-2 text-slate-500">{entry.email || entry.username}</span></span></label>)}</div><button type="button" onClick={() => { setCreateNew({ ...createNew, [index]: true }); setExistingSelections({ ...existingSelections, [index]: "" }); }} className="mt-2 text-xs font-bold text-blue-700">None of these — create a new account</button></div>}
+                {((directoryMatches[index]?.length ?? 0) === 0 || createNew[index]) && <><p className="text-xs text-slate-500">{action.email ? "I will create a secure account using these details." : `I could not identify an existing ${action.name ?? "user"}. Add a personal email to create a new account.`}</p><div className="grid gap-2 sm:grid-cols-3"><input value={action.name ?? ""} onChange={(event) => updateAction(index, { name: event.target.value })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Name" /><input type="email" value={action.email ?? ""} onChange={(event) => updateAction(index, { email: event.target.value })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" placeholder="Personal email" /><select value={action.role} onChange={(event) => updateAction(index, { role: event.target.value as "member" | "leader" })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"><option value="member">Member</option><option value="leader">Team Leader</option></select></div>{createNew[index] && <button type="button" onClick={() => setCreateNew({ ...createNew, [index]: false })} className="text-xs font-bold text-slate-500">Back to matching accounts</button>}</>}
+              </div>}
               {(action.action === "remove" || action.action === "change_role") && <div className="mt-2 grid gap-2 sm:grid-cols-2"><select required value={memberSelections[index] ?? ""} onChange={(event) => setMemberSelections({ ...memberSelections, [index]: event.target.value })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"><option value="">Choose member</option>{candidates(action).map((member) => <option key={member.user_id} value={member.user_id}>{member.name} — {member.email}</option>)}</select>{action.action === "change_role" && <select value={action.role} onChange={(event) => updateAction(index, { role: event.target.value as "member" | "leader" })} className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"><option value="member">Member</option><option value="leader">Team Leader</option></select>}</div>}
               {action.action === "delete_team" && <div className="mt-2"><p className="text-xs font-semibold text-red-600">This permanently deletes the active team and its analyses.</p><input value={deleteConfirmations[index] ?? ""} onChange={(event) => setDeleteConfirmations({ ...deleteConfirmations, [index]: event.target.value })} className="mt-2 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm" placeholder={`Type ${data.team.name} to confirm`} /></div>}
             </article>
