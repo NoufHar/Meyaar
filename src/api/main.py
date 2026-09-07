@@ -15,9 +15,11 @@ from fastapi import (
     Header,
     HTTPException,
     UploadFile,
+    Query,
 )
 from fastapi.responses import RedirectResponse
 from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
@@ -37,8 +39,11 @@ from src.api.schemas import (
     UserResponse,
     TeamInviteRequest,
     TeamCreateRequest,
+    TeamCommandBatchRequest,
+    BatchReportRequest,
     TeamJoinRequest,
     TeamRoleUpdate,
+    ExistingTeamMemberAddRequest,
     PasswordChangeRequest,
     NewUserInterpretRequest,
     NewUserCreateRequest,
@@ -72,6 +77,16 @@ app = FastAPI(
 app.include_router(
     analysis_router,
     prefix="/api",
+)
+
+# The browser uploads large datasets directly to FastAPI so long analyses are
+# not cut off by the Next.js development proxy.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -303,6 +318,42 @@ def member_work_dashboard(member_id: str, user: dict = Depends(current_user)):
     return {"member": {**dict(member), "user_id": str(member["user_id"]), "work_hours_today": round(active_seconds / 3600, 1), "work_percentage": min(round(active_seconds / 28800 * 100), 100)}, "summary": dict(summary), "recent_analyses": [{**dict(row), "analysis_id": str(row["analysis_id"]), "created_at": row["created_at"].isoformat()} for row in recent]}
 
 
+@app.get("/team/user-directory")
+def search_user_directory(query: str = Query(min_length=2, max_length=100), user: dict = Depends(current_user)):
+    """Return a limited candidate list so the assistant can resolve duplicate names."""
+    if user.get("role") != "manager" or not user.get("team_id"):
+        raise HTTPException(status_code=403, detail="Manager access is required.")
+    term = f"%{query.strip().lower()}%"
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        rows = connection.execute(text("""
+            SELECT u.user_id, u.name, u.email, u.username
+            FROM public.app_users u
+            WHERE (LOWER(u.name) LIKE :term OR LOWER(COALESCE(u.email, '')) LIKE :term OR LOWER(COALESCE(u.username, '')) LIKE :term)
+              AND NOT EXISTS (SELECT 1 FROM public.team_memberships m WHERE m.team_id = :team_id AND m.user_id = u.user_id)
+            ORDER BY LOWER(u.name), LOWER(COALESCE(u.email, '')) LIMIT 10
+        """), {"term": term, "team_id": user["team_id"]}).mappings().all()
+    return [{**dict(row), "user_id": str(row["user_id"])} for row in rows]
+
+
+@app.post("/teams/{team_id}/members", status_code=201)
+def add_existing_team_member(team_id: str, body: ExistingTeamMemberAddRequest, user: dict = Depends(current_user)):
+    """Add an existing account without exposing or resetting its credentials."""
+    if user.get("role") != "manager" or user.get("team_id") != team_id:
+        raise HTTPException(status_code=403, detail="Only this team's manager can add existing members.")
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        candidate = connection.execute(text("SELECT user_id, name, email FROM public.app_users WHERE user_id = :user_id"), {"user_id": body.user_id}).mappings().first()
+        if not candidate:
+            raise HTTPException(status_code=404, detail="User account not found.")
+        exists = connection.execute(text("SELECT 1 FROM public.team_memberships WHERE team_id = :team_id AND user_id = :user_id"), {"team_id": team_id, "user_id": body.user_id}).scalar()
+        if exists:
+            raise HTTPException(status_code=409, detail="This user is already a member of the team.")
+        connection.execute(text("INSERT INTO public.team_memberships (team_id, user_id, role) VALUES (:team_id, :user_id, :role)"), {"team_id": team_id, "user_id": body.user_id, "role": body.role})
+        connection.execute(text("""INSERT INTO public.audit_logs (actor_user_id, team_id, action, target_user_id, details) VALUES (:actor, :team, 'existing_member_added', :target, CAST(:details AS JSONB))"""), {"actor": user["user_id"], "team": team_id, "target": body.user_id, "details": json.dumps({"role": body.role})})
+    return {"user_id": str(candidate["user_id"]), "name": candidate["name"], "email": candidate["email"], "role": body.role}
+
+
 @app.patch("/teams/{team_id}/members/{member_id}/role")
 def update_team_role(team_id: str, member_id: str, body: TeamRoleUpdate, user: dict = Depends(current_user)):
     if user["role"] != "manager" or user["team_id"] != team_id:
@@ -373,15 +424,47 @@ async def interpret_new_team_user(body: NewUserInterpretRequest, user: dict = De
     return await run_in_threadpool(_interpret_new_user, body.instruction)
 
 
+def _interpret_team_command_batch(instruction: str) -> dict:
+    """Turn one natural-language request into an ordered, reviewable action plan."""
+    llm = get_llm()
+    if llm is not None:
+        prompt = """Convert this Arabic or English team-management request into strict JSON only: {"summary":"short summary","actions":[...]}. Each action must use action add, remove, create_team, delete_team, change_role, list_members, or team_summary and include name, email, team_name, role, suggested_username. Keep the user's order. Adding a user requires their personal email. Never execute or invent missing emails. Request: """ + instruction
+        try:
+            parsed = json.loads(_strip_json_fence(str(llm.invoke(prompt).content)))
+            actions = parsed.get("actions") if isinstance(parsed, dict) else None
+            if isinstance(actions, list) and actions:
+                normalized = []
+                for action in actions[:12]:
+                    if not isinstance(action, dict):
+                        continue
+                    kind = action.get("action")
+                    if kind not in {"add", "remove", "create_team", "delete_team", "change_role", "list_members", "team_summary"}:
+                        continue
+                    normalized.append({"action": kind, "name": action.get("name"), "email": action.get("email"), "team_name": action.get("team_name"), "role": "leader" if action.get("role") == "leader" else "member", "suggested_username": action.get("suggested_username")})
+                if normalized:
+                    return {"summary": str(parsed.get("summary") or f"{len(normalized)} actions ready for review"), "actions": normalized}
+        except Exception:
+            pass
+    parts = [part.strip() for part in re.split(r"\s*(?:،|,|\bثم\b|\bوبعدين\b|\band\b)\s*", instruction, flags=re.I) if part.strip()]
+    actions = [_interpret_new_user(part) for part in parts[:12]]
+    return {"summary": f"{len(actions)} actions ready for review", "actions": actions}
+
+
+@app.post("/team/commands/interpret")
+async def interpret_team_commands(body: TeamCommandBatchRequest, user: dict = Depends(current_user)):
+    if user["role"] != "manager":
+        raise HTTPException(status_code=403, detail="Only the team manager can manage team actions.")
+    return await run_in_threadpool(_interpret_team_command_batch, body.instruction)
+
+
 @app.post("/team/users", status_code=201)
 def create_team_user(body: NewUserCreateRequest, user: dict = Depends(current_user)):
     if user["role"] != "manager" or not user["team_id"]:
         raise HTTPException(status_code=403, detail="Only the team manager can create users.")
-    personal_email = body.email.strip().lower() if body.email else None
-    if personal_email:
-        parsed_email = parseaddr(personal_email)[1]
-        if parsed_email != personal_email or "@" not in personal_email or "." not in personal_email.rsplit("@", 1)[-1]:
-            raise HTTPException(status_code=422, detail="Enter a valid personal email address.")
+    personal_email = body.email.strip().lower()
+    parsed_email = parseaddr(personal_email)[1]
+    if parsed_email != personal_email or "@" not in personal_email or "." not in personal_email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=422, detail="A valid personal email is required to deliver credentials securely.")
     with database_engine().begin() as connection:
         ensure_app_tables(connection)
         base = re.sub(r"[^a-z0-9._-]", "", (body.suggested_username or "").lower()) or "user"
@@ -395,14 +478,14 @@ def create_team_user(body: NewUserCreateRequest, user: dict = Depends(current_us
         connection.execute(text("""INSERT INTO public.app_users (user_id, name, email, personal_email, username, password_hash, active_team_id, must_change_password) VALUES (:user_id, :name, :email, :personal_email, :username, :password_hash, :team_id, TRUE)"""), {"user_id": member_id, "name": body.name.strip(), "email": account_email, "personal_email": personal_email, "username": username, "password_hash": hash_password(temporary_password), "team_id": user["team_id"]})
         connection.execute(text("INSERT INTO public.team_memberships (team_id, user_id, role) VALUES (:team_id, :user_id, :role)"), {"team_id": user["team_id"], "user_id": member_id, "role": body.role})
         connection.execute(text("""INSERT INTO public.audit_logs (actor_user_id, team_id, action, target_user_id, details) VALUES (:actor, :team, 'user_created', :target, CAST(:details AS JSONB))"""), {"actor": user["user_id"], "team": user["team_id"], "target": member_id, "details": json.dumps({"role": body.role, "username": username})})
-        if personal_email:
-            try:
-                _send_new_user_welcome(personal_email, body.name.strip(), user["team_name"], account_email, username, temporary_password)
-            except RuntimeError as error:
-                raise HTTPException(status_code=503, detail=str(error)) from error
-            except (OSError, smtplib.SMTPException) as error:
-                raise HTTPException(status_code=502, detail=f"Welcome email could not be sent: {error}") from error
-    return {"user_id": member_id, "name": body.name.strip(), "email": account_email, "personal_email": personal_email, "username": username, "role": body.role, "temporary_password": temporary_password, "must_change_password": True, "welcome_email_sent": bool(personal_email)}
+        # The temporary secret is delivered only to the employee and never returned to the manager's browser.
+        try:
+            _send_new_user_welcome(personal_email, body.name.strip(), user["team_name"], account_email, username, temporary_password)
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except (OSError, smtplib.SMTPException) as error:
+            raise HTTPException(status_code=502, detail=f"Welcome email could not be sent: {error}") from error
+    return {"user_id": member_id, "name": body.name.strip(), "email": account_email, "personal_email": personal_email, "role": body.role, "must_change_password": True, "welcome_email_sent": True}
 
 
 @app.delete("/teams/{team_id}/members/{member_id}", status_code=204)
@@ -519,7 +602,7 @@ def _ensure_review_table(connection) -> None:
         )
     """))
 
-MAX_IMAGE_SIZE = 25 * 1024 * 1024
+MAX_IMAGE_SIZE = 100 * 1024 * 1024
 
 SUPPORTED_IMAGE_EXTENSIONS = {
     ".jpg",
@@ -601,6 +684,26 @@ async def create_report_pdf(payload: dict, user: dict = Depends(current_user)):
     pdf = await run_in_threadpool(build_report_pdf, payload)
     filename = Path(str(payload.get("filename", "meyaar"))).stem
     return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}-meyaar-report.pdf"'})
+
+
+@app.post("/reports/pdf/batch")
+async def create_batch_report_pdf(body: BatchReportRequest, user: dict = Depends(current_user)):
+    """Build one PDF from selected saved analyses after enforcing account/team access."""
+    from src.reporting.simple_pdf import build_combined_report_pdf
+    ids = list(dict.fromkeys(body.analysis_ids))
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        rows = connection.execute(text("""
+            SELECT analysis_id::text AS analysis_id, result_payload
+            FROM public.saved_analyses
+            WHERE analysis_id::text = ANY(:ids)
+              AND ((user_id = :user_id) OR (:is_manager AND team_id = :team_id))
+        """), {"ids": ids, "user_id": user["user_id"], "team_id": user["team_id"], "is_manager": user["role"] in ("manager", "leader")}).mappings().all()
+    by_id = {row["analysis_id"]: row["result_payload"] for row in rows}
+    if len(by_id) != len(ids):
+        raise HTTPException(status_code=404, detail="One or more selected analyses were not found.")
+    pdf = await run_in_threadpool(build_combined_report_pdf, [by_id[analysis_id] for analysis_id in ids])
+    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="meyaar-selected-analyses.pdf"'})
 
 
 @app.post("/images/inspect", response_model=ImageInspectionResponse)
@@ -711,7 +814,7 @@ async def analyze_uploaded_image(
 
 
 
-MAX_VECTOR_SIZE = 100 * 1024 * 1024
+MAX_VECTOR_SIZE = 500 * 1024 * 1024
 
 
 @app.post(
@@ -742,7 +845,7 @@ async def process_uploaded_vector(
             status_code=413,
             detail=(
                 "The vector file exceeds "
-                "the 100 MB limit."
+                "the 500 MB limit."
             ),
         )
 

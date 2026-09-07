@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+// Handles single files and folders, including progress and automatic layer detection.
+
+import { useEffect, useRef, useState } from "react";
 
 import {
   analyzeMapImage,
@@ -8,7 +10,6 @@ import {
 } from "@/lib/api";
 
 import type {
-  LayerType,
   ProcessingResult,
 } from "@/types/analysis";
 import { useLanguage } from "@/components/LanguageProvider";
@@ -19,11 +20,32 @@ interface UploadPanelProps {
     result: ProcessingResult,
     file: File,
     mode: UploadMode,
+    batch: BatchUploadItem[],
   ) => void;
 }
 
 
 type UploadMode = "vector" | "image";
+export interface BatchUploadItem { result: ProcessingResult; file: File; mode: UploadMode; }
+
+async function splitMixedGeoJson(files: File[]): Promise<File[]> {
+  const expanded: File[] = [];
+  for (const file of files) {
+    if (!/\.geo?json$/i.test(file.name)) { expanded.push(file); continue; }
+    try {
+      const collection = JSON.parse(await file.text()) as { type?: string; features?: Array<{ geometry?: { type?: string } | null }>; [key: string]: unknown };
+      if (collection.type !== "FeatureCollection" || !Array.isArray(collection.features)) { expanded.push(file); continue; }
+      const roads = collection.features.filter((feature) => /LineString$/i.test(feature.geometry?.type ?? ""));
+      const buildings = collection.features.filter((feature) => /Polygon$/i.test(feature.geometry?.type ?? ""));
+      const unsupported = collection.features.length - roads.length - buildings.length;
+      if (!roads.length || !buildings.length || unsupported > 0) { expanded.push(file); continue; }
+      const base = file.name.replace(/\.geo?json$/i, "");
+      expanded.push(new File([JSON.stringify({ ...collection, name: `${base}_roads`, features: roads })], `${base}_roads.geojson`, { type: "application/geo+json" }));
+      expanded.push(new File([JSON.stringify({ ...collection, name: `${base}_buildings`, features: buildings })], `${base}_buildings.geojson`, { type: "application/geo+json" }));
+    } catch { expanded.push(file); }
+  }
+  return expanded;
+}
 
 
 export default function UploadPanel({
@@ -33,11 +55,10 @@ export default function UploadPanel({
   const [mode, setMode] =
     useState<UploadMode>("vector");
 
-  const [layerType, setLayerType] =
-    useState<LayerType>("roads");
-
-  const [file, setFile] =
-    useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [progress, setProgress] = useState(0);
+  const [currentFile, setCurrentFile] = useState(0);
 
   const [isLoading, setIsLoading] =
     useState(false);
@@ -55,6 +76,8 @@ export default function UploadPanel({
     return () => window.clearInterval(timer);
   }, [isLoading]);
 
+  useEffect(() => { folderInputRef.current?.setAttribute("webkitdirectory", ""); }, []);
+
 
   const acceptedFormats =
     mode === "vector"
@@ -67,31 +90,39 @@ export default function UploadPanel({
   ) {
     event.preventDefault();
 
-    if (!file) {
-      setError("Select a file before starting the analysis.");
+    if (!files.length) {
+      setError("Select a file or folder before starting the analysis.");
       return;
     }
 
-    const sizeLimit = mode === "vector" ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
-    if (file.size > sizeLimit) {
-      setError(`The selected file exceeds the ${mode === "vector" ? 100 : 25} MB limit.`);
+    const sizeLimit = mode === "vector" ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
+    const oversized = files.find((item) => item.size > sizeLimit);
+    if (oversized) {
+      setError(`${oversized.name} exceeds the ${mode === "vector" ? 500 : 100} MB limit.`);
       return;
     }
 
     setElapsedSeconds(0);
     setIsLoading(true);
+    setProgress(0);
+    setCurrentFile(0);
     setError(null);
 
     try {
-      const result =
-        mode === "vector"
-          ? await processVectorFile(
-              file,
-              layerType,
-            )
-          : await analyzeMapImage(file);
-
-      onResult(result, file, mode);
+      const workingFiles = mode === "vector" ? await splitMixedGeoJson(files) : files;
+      if (workingFiles.length !== files.length) setFiles(workingFiles);
+      let finalResult: ProcessingResult | null = null;
+      const completed: BatchUploadItem[] = [];
+      for (let index = 0; index < workingFiles.length; index += 1) {
+        const selectedFile = workingFiles[index];
+        setCurrentFile(index);
+        const updateProgress = (filePercent: number) => setProgress(Math.round(((index + filePercent / 100) / workingFiles.length) * 100));
+        finalResult = mode === "vector"
+          ? await processVectorFile(selectedFile, undefined, updateProgress)
+          : await analyzeMapImage(selectedFile, updateProgress);
+        completed.push({ result: finalResult, file: selectedFile, mode });
+      }
+      if (finalResult) onResult(finalResult, workingFiles[workingFiles.length - 1], mode, completed);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -106,7 +137,8 @@ export default function UploadPanel({
 
   function changeMode(nextMode: UploadMode) {
     setMode(nextMode);
-    setFile(null);
+    setFiles([]);
+    setProgress(0);
     setError(null);
   }
 
@@ -157,32 +189,7 @@ export default function UploadPanel({
         onSubmit={handleSubmit}
         className="space-y-5"
       >
-        {mode === "vector" && (
-          <div>
-            <label
-              htmlFor="layer-type"
-              className="mb-2 block text-sm font-semibold text-slate-800"
-            >
-              {t("Layer type")}
-            </label>
-
-            <select
-              id="layer-type"
-              value={layerType}
-              onChange={(event) =>
-                setLayerType(
-                  event.target.value as LayerType,
-                )
-              }
-              className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100"
-            >
-              <option value="roads">{t("Roads")}</option>
-              <option value="buildings">
-                {t("Buildings")}
-              </option>
-            </select>
-          </div>
-        )}
+        {mode === "vector" && <div className="flex items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2"><span className="text-xs text-blue-600">✦</span><div><p className="text-xs font-bold text-blue-900">Automatic layer detection</p><p className="text-[11px] leading-4 text-blue-700">MEYAAR identifies roads and buildings from geometry.</p></div></div>}
 
         <div>
           <label
@@ -194,13 +201,13 @@ export default function UploadPanel({
 
           <label
             htmlFor="dataset-file"
-            className="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 px-5 text-center transition hover:border-blue-400 hover:bg-blue-50"
+            className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-4 text-center transition hover:border-blue-400 hover:bg-blue-50"
           >
-            <span className="text-3xl">↑</span>
+            <span className="text-2xl">↑</span>
 
-            <span className="mt-3 text-sm font-semibold text-slate-900">
-              {file
-                ? file.name
+            <span className="mt-2 text-sm font-semibold text-slate-900">
+              {files.length
+                ? files.length === 1 ? files[0].name : `${files.length} files selected`
                 : t("Choose a file to upload")}
             </span>
 
@@ -210,9 +217,9 @@ export default function UploadPanel({
                 : "PNG, JPG, JPEG, TIFF, or TIF"}
             </span>
 
-            {file && (
+            {files.length > 0 && (
               <span className="mt-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm">
-                {(file.size / 1024 / 1024).toFixed(2)} MB
+                {(files.reduce((total, item) => total + item.size, 0) / 1024 / 1024).toFixed(2)} MB total
               </span>
             )}
           </label>
@@ -222,13 +229,13 @@ export default function UploadPanel({
             type="file"
             accept={acceptedFormats}
             onChange={(event) => {
-              setFile(
-                event.target.files?.[0] ?? null,
-              );
+              setFiles(Array.from(event.target.files ?? []));
               setError(null);
             }}
             className="sr-only"
           />
+          <div className="mt-2 flex items-center justify-center gap-2"><span className="text-[11px] text-slate-400">or</span><label htmlFor="dataset-folder" className="cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100">Choose a folder</label></div>
+          <input ref={folderInputRef} id="dataset-folder" type="file" multiple accept={acceptedFormats} onChange={(event) => { const supported = Array.from(event.target.files ?? []).filter((item) => acceptedFormats.split(",").some((extension) => item.name.toLowerCase().endsWith(extension)) && !(mode === "vector" && /\.(png|jpe?g|tiff?|webp)\.json$/i.test(item.name))); setFiles(supported); setError(supported.length ? null : "The folder does not contain supported files for this analysis type."); }} className="sr-only" />
         </div>
 
         {error && (
@@ -252,6 +259,8 @@ export default function UploadPanel({
 
         {isLoading && (
           <div className="rounded-xl bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-800" aria-live="polite">
+            <div className="mb-2 flex justify-between font-bold"><span>{files[currentFile]?.name}</span><span>{progress}%</span></div><div className="mb-2 h-2 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600 transition-[width]" style={{ width: `${progress}%` }} /></div>
+            {files.length > 1 && <p className="mb-1 font-semibold">File {currentFile + 1} of {files.length}</p>}
             {elapsedSeconds < 5
               ? "Uploading and validating the file..."
               : elapsedSeconds < 20

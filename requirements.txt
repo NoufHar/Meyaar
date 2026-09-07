@@ -21,6 +21,7 @@ datasets
 Pillow
 rasterio
 reportlab
+pypdf
 
 # RAG / embeddings
 sentence-transformers

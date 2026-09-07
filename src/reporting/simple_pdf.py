@@ -9,6 +9,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from pypdf import PdfReader, PdfWriter
 
 
 def _safe(value: Any) -> str:
@@ -82,3 +83,15 @@ def build_report_pdf(payload: dict[str, Any]) -> bytes:
     story += [Spacer(1, 8 * mm), Paragraph("This is an internal Meyaar quality assessment and is not an official GeoSA certification.", body)]
     document.build(story)
     return buffer.getvalue()
+
+
+def build_combined_report_pdf(payloads: list[dict[str, Any]]) -> bytes:
+    """Merge complete per-analysis reports while preserving a clear page boundary between files."""
+    writer = PdfWriter()
+    for payload in payloads:
+        reader = PdfReader(BytesIO(build_report_pdf(payload)))
+        for page in reader.pages:
+            writer.add_page(page)
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
