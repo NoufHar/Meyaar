@@ -834,7 +834,7 @@ async def process_uploaded_vector(
             status_code=413,
             detail=(
                 "The vector file exceeds "
-                "the 100 MB limit."
+                "the 500 MB limit."
             ),
         )
 

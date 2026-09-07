@@ -236,10 +236,24 @@ def process_vector_upload(
         detection = detect_layer_type(gdf)
         layer_geojson = _build_layer_geojson(gdf)
 
-        if requested_layer:
-            layer_name = requested_layer
+        # A selected folder can contain both road and building files. Geometry
+        # is authoritative here so a Polygon is never inserted into the roads
+        # table (or a LineString into buildings) just because of the UI choice.
+        geometry_types = set(gdf.geom_type.dropna().unique())
+        if geometry_types and geometry_types.issubset({"LineString", "MultiLineString"}):
+            layer_name = "roads"
+        elif geometry_types and geometry_types.issubset({"Polygon", "MultiPolygon"}):
+            layer_name = "buildings"
+        elif geometry_types:
+            raise InvalidVectorFileError(
+                "The file contains mixed or unsupported geometry types: "
+                + ", ".join(sorted(geometry_types))
+                + ". Separate roads and buildings into different files."
+            )
         elif detection["status"] == "success":
             layer_name = detection["layer_type"]
+        elif requested_layer:
+            layer_name = requested_layer
         else:
             raise InvalidVectorFileError(
                 detection.get(
