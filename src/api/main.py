@@ -37,6 +37,8 @@ from src.api.schemas import (
     UserResponse,
     TeamInviteRequest,
     TeamCreateRequest,
+    TeamCommandBatchRequest,
+    BatchReportRequest,
     TeamJoinRequest,
     TeamRoleUpdate,
     PasswordChangeRequest,
@@ -373,15 +375,47 @@ async def interpret_new_team_user(body: NewUserInterpretRequest, user: dict = De
     return await run_in_threadpool(_interpret_new_user, body.instruction)
 
 
+def _interpret_team_command_batch(instruction: str) -> dict:
+    """Turn one natural-language request into an ordered, reviewable action plan."""
+    llm = get_llm()
+    if llm is not None:
+        prompt = """Convert this Arabic or English team-management request into strict JSON only: {"summary":"short summary","actions":[...]}. Each action must use action add, remove, create_team, delete_team, change_role, list_members, or team_summary and include name, email, team_name, role, suggested_username. Keep the user's order. Adding a user requires their personal email. Never execute or invent missing emails. Request: """ + instruction
+        try:
+            parsed = json.loads(_strip_json_fence(str(llm.invoke(prompt).content)))
+            actions = parsed.get("actions") if isinstance(parsed, dict) else None
+            if isinstance(actions, list) and actions:
+                normalized = []
+                for action in actions[:12]:
+                    if not isinstance(action, dict):
+                        continue
+                    kind = action.get("action")
+                    if kind not in {"add", "remove", "create_team", "delete_team", "change_role", "list_members", "team_summary"}:
+                        continue
+                    normalized.append({"action": kind, "name": action.get("name"), "email": action.get("email"), "team_name": action.get("team_name"), "role": "leader" if action.get("role") == "leader" else "member", "suggested_username": action.get("suggested_username")})
+                if normalized:
+                    return {"summary": str(parsed.get("summary") or f"{len(normalized)} actions ready for review"), "actions": normalized}
+        except Exception:
+            pass
+    parts = [part.strip() for part in re.split(r"\s*(?:،|,|\bثم\b|\bوبعدين\b|\band\b)\s*", instruction, flags=re.I) if part.strip()]
+    actions = [_interpret_new_user(part) for part in parts[:12]]
+    return {"summary": f"{len(actions)} actions ready for review", "actions": actions}
+
+
+@app.post("/team/commands/interpret")
+async def interpret_team_commands(body: TeamCommandBatchRequest, user: dict = Depends(current_user)):
+    if user["role"] != "manager":
+        raise HTTPException(status_code=403, detail="Only the team manager can manage team actions.")
+    return await run_in_threadpool(_interpret_team_command_batch, body.instruction)
+
+
 @app.post("/team/users", status_code=201)
 def create_team_user(body: NewUserCreateRequest, user: dict = Depends(current_user)):
     if user["role"] != "manager" or not user["team_id"]:
         raise HTTPException(status_code=403, detail="Only the team manager can create users.")
-    personal_email = body.email.strip().lower() if body.email else None
-    if personal_email:
-        parsed_email = parseaddr(personal_email)[1]
-        if parsed_email != personal_email or "@" not in personal_email or "." not in personal_email.rsplit("@", 1)[-1]:
-            raise HTTPException(status_code=422, detail="Enter a valid personal email address.")
+    personal_email = body.email.strip().lower()
+    parsed_email = parseaddr(personal_email)[1]
+    if parsed_email != personal_email or "@" not in personal_email or "." not in personal_email.rsplit("@", 1)[-1]:
+        raise HTTPException(status_code=422, detail="A valid personal email is required to deliver credentials securely.")
     with database_engine().begin() as connection:
         ensure_app_tables(connection)
         base = re.sub(r"[^a-z0-9._-]", "", (body.suggested_username or "").lower()) or "user"
@@ -395,14 +429,14 @@ def create_team_user(body: NewUserCreateRequest, user: dict = Depends(current_us
         connection.execute(text("""INSERT INTO public.app_users (user_id, name, email, personal_email, username, password_hash, active_team_id, must_change_password) VALUES (:user_id, :name, :email, :personal_email, :username, :password_hash, :team_id, TRUE)"""), {"user_id": member_id, "name": body.name.strip(), "email": account_email, "personal_email": personal_email, "username": username, "password_hash": hash_password(temporary_password), "team_id": user["team_id"]})
         connection.execute(text("INSERT INTO public.team_memberships (team_id, user_id, role) VALUES (:team_id, :user_id, :role)"), {"team_id": user["team_id"], "user_id": member_id, "role": body.role})
         connection.execute(text("""INSERT INTO public.audit_logs (actor_user_id, team_id, action, target_user_id, details) VALUES (:actor, :team, 'user_created', :target, CAST(:details AS JSONB))"""), {"actor": user["user_id"], "team": user["team_id"], "target": member_id, "details": json.dumps({"role": body.role, "username": username})})
-        if personal_email:
-            try:
-                _send_new_user_welcome(personal_email, body.name.strip(), user["team_name"], account_email, username, temporary_password)
-            except RuntimeError as error:
-                raise HTTPException(status_code=503, detail=str(error)) from error
-            except (OSError, smtplib.SMTPException) as error:
-                raise HTTPException(status_code=502, detail=f"Welcome email could not be sent: {error}") from error
-    return {"user_id": member_id, "name": body.name.strip(), "email": account_email, "personal_email": personal_email, "username": username, "role": body.role, "temporary_password": temporary_password, "must_change_password": True, "welcome_email_sent": bool(personal_email)}
+        # The temporary secret is delivered only to the employee and never returned to the manager's browser.
+        try:
+            _send_new_user_welcome(personal_email, body.name.strip(), user["team_name"], account_email, username, temporary_password)
+        except RuntimeError as error:
+            raise HTTPException(status_code=503, detail=str(error)) from error
+        except (OSError, smtplib.SMTPException) as error:
+            raise HTTPException(status_code=502, detail=f"Welcome email could not be sent: {error}") from error
+    return {"user_id": member_id, "name": body.name.strip(), "email": account_email, "personal_email": personal_email, "role": body.role, "must_change_password": True, "welcome_email_sent": True}
 
 
 @app.delete("/teams/{team_id}/members/{member_id}", status_code=204)
@@ -601,6 +635,26 @@ async def create_report_pdf(payload: dict, user: dict = Depends(current_user)):
     pdf = await run_in_threadpool(build_report_pdf, payload)
     filename = Path(str(payload.get("filename", "meyaar"))).stem
     return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename}-meyaar-report.pdf"'})
+
+
+@app.post("/reports/pdf/batch")
+async def create_batch_report_pdf(body: BatchReportRequest, user: dict = Depends(current_user)):
+    """Build one PDF from selected saved analyses after enforcing account/team access."""
+    from src.reporting.simple_pdf import build_combined_report_pdf
+    ids = list(dict.fromkeys(body.analysis_ids))
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        rows = connection.execute(text("""
+            SELECT analysis_id::text AS analysis_id, result_payload
+            FROM public.saved_analyses
+            WHERE analysis_id::text = ANY(:ids)
+              AND ((user_id = :user_id) OR (:is_manager AND team_id = :team_id))
+        """), {"ids": ids, "user_id": user["user_id"], "team_id": user["team_id"], "is_manager": user["role"] in ("manager", "leader")}).mappings().all()
+    by_id = {row["analysis_id"]: row["result_payload"] for row in rows}
+    if len(by_id) != len(ids):
+        raise HTTPException(status_code=404, detail="One or more selected analyses were not found.")
+    pdf = await run_in_threadpool(build_combined_report_pdf, [by_id[analysis_id] for analysis_id in ids])
+    return Response(content=pdf, media_type="application/pdf", headers={"Content-Disposition": 'attachment; filename="meyaar-selected-analyses.pdf"'})
 
 
 @app.post("/images/inspect", response_model=ImageInspectionResponse)

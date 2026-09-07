@@ -128,8 +128,16 @@ class NewUserInterpretRequest(BaseModel):
     instruction: str = Field(min_length=3, max_length=1000)
 
 
+class TeamCommandBatchRequest(BaseModel):
+    instruction: str = Field(min_length=3, max_length=3000)
+
+
+class BatchReportRequest(BaseModel):
+    analysis_ids: list[str] = Field(min_length=1, max_length=50)
+
+
 class NewUserCreateRequest(BaseModel):
     name: str = Field(min_length=2, max_length=100)
-    email: str | None = Field(default=None, max_length=254)
+    email: str = Field(min_length=5, max_length=254)
     role: Literal["leader", "member"] = "member"
     suggested_username: str | None = Field(default=None, max_length=50)

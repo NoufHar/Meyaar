@@ -13,6 +13,7 @@ import type {
   TeamMembership,
   NewUserPreview,
   CreatedTeamUser,
+  TeamCommandPlan,
 } from "@/types/analysis";
 
 
@@ -140,6 +141,10 @@ export async function updatePresence(): Promise<void> { await fetch(`${API_BASE_
 export async function logout(): Promise<void> { await fetch(`${API_BASE_URL}/auth/logout`, { method: "POST", headers: authHeaders() }); setAuthToken(null); }
 export async function listAnalyses(): Promise<SavedAnalysisSummary[]> { return parseResponse<SavedAnalysisSummary[]>(await fetch(`${API_BASE_URL}/analyses`, { headers: authHeaders() })); }
 export async function loadAnalysis(id: string): Promise<ProcessingResult> { return parseResponse<ProcessingResult>(await fetch(`${API_BASE_URL}/analyses/${id}`, { headers: authHeaders() })); }
+export async function downloadBatchPdf(analysisIds: string[]): Promise<void> { const response = await fetch(`${API_BASE_URL}/reports/pdf/batch`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ analysis_ids: analysisIds }) }); if (!response.ok) { await parseResponse(response); return; } const blob = await response.blob(); downloadBlob(blob, "meyaar-selected-analyses.pdf"); }
+export async function downloadBatchJson(analysisIds: string[]): Promise<void> { const results = await Promise.all(analysisIds.map(loadAnalysis)); downloadBlob(new Blob([JSON.stringify({ exported_at: new Date().toISOString(), analyses: results }, null, 2)], { type: "application/json" }), "meyaar-selected-analyses.json"); }
+
+function downloadBlob(blob: Blob, filename: string) { const url = URL.createObjectURL(blob); const anchor = document.createElement("a"); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url); }
 export async function getTeamDashboard(): Promise<TeamDashboardData> { return parseResponse<TeamDashboardData>(await fetch(`${API_BASE_URL}/team/dashboard`, { headers: authHeaders() })); }
 export async function getMemberWorkDashboard(userId: string): Promise<MemberWorkDashboard> { return parseResponse<MemberWorkDashboard>(await fetch(`${API_BASE_URL}/team/members/${userId}/dashboard`, { headers: authHeaders() })); }
 export async function inviteTeamMember(email: string): Promise<{ status: string; email: string }> { return parseResponse(await fetch(`${API_BASE_URL}/team/invitations`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ email }) })); }
@@ -152,6 +157,7 @@ export async function removeTeamMember(teamId: string, userId: string): Promise<
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> { const response = await fetch(`${API_BASE_URL}/auth/password`, { method: "PUT", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }) }); if (!response.ok) await parseResponse(response); }
 export async function deleteTeam(teamId: string): Promise<AuthUser> { return parseResponse(await fetch(`${API_BASE_URL}/teams/${teamId}`, { method: "DELETE", headers: authHeaders() })); }
 export async function interpretNewUser(instruction: string): Promise<NewUserPreview> { return parseResponse(await fetch(`${API_BASE_URL}/team/users/interpret`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ instruction }) })); }
+export async function interpretTeamCommands(instruction: string): Promise<TeamCommandPlan> { return parseResponse(await fetch(`${API_BASE_URL}/team/commands/interpret`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ instruction }) })); }
 export async function createTeamUser(preview: NewUserPreview): Promise<CreatedTeamUser> { return parseResponse(await fetch(`${API_BASE_URL}/team/users`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(preview) })); }
 
 export async function getErrorReview(resultId: number): Promise<ErrorReview> {
