@@ -24,6 +24,64 @@ def test_context_contains_summary_and_analyses(repo):
     assert ctx["rules"]["RD001"]["type"] == "heuristic"
 
 
+def test_context_contains_remediation_audit(repo):
+    _seed(repo)   # run_analysis also persists remediation records
+    ctx = build_chat_context(repo, RUN_ID)
+    rem = ctx["remediation"]
+    assert rem["available"] is True
+    # 14 records: BLD003+RD004 applied, RD001/RD002+others pending_review,
+    # GIS001-005 no_action (layer-level), none failed in the fixture run.
+    assert rem["summary"]["total"] == 14
+    assert rem["summary"]["auto_fixed"] == 2
+    assert rem["summary"]["failed"] == 0
+    assert rem["summary"]["pending_review"] == 7
+    assert rem["summary"]["no_action"] == 5
+    assert len(rem["items"]) == 14
+    item = rem["items"][0]
+    assert {"rule_id", "feature_id", "action", "status",
+            "remediation_type"} <= set(item)
+
+
+def test_chat_prompt_includes_remediation_audit(repo):
+    _seed(repo)
+    prompts: list[str] = []
+
+    class RecordingLLM:
+        def invoke(self, prompt):
+            prompts.append(prompt)
+            return type("R", (), {"content": json.dumps({
+                "answer": "Two invalid geometries were repaired automatically; "
+                          "the rest are queued for human review.",
+                "sources": []})})()
+
+    out = answer_question(repo, RUN_ID, "what was fixed automatically?", llm=RecordingLLM())
+    assert "remediated automatically" in out["answer"] or "repaired automatically" in out["answer"]
+    joined = prompts[0]
+    assert '"remediation"' in joined
+    assert '"auto_fixed": 2' in joined
+    assert '"pending_review": 7' in joined
+
+
+def test_chat_works_when_remediation_table_missing(repo):
+    _seed(repo)
+    original = repo.fetch_remediation_records
+
+    def boom(run_id):
+        raise RuntimeError("relation agent_remediation_actions does not exist")
+
+    repo.fetch_remediation_records = boom
+    try:
+        ctx = build_chat_context(repo, RUN_ID)
+        assert ctx["remediation"]["available"] is False
+        assert ctx["remediation"]["items"] == []
+        # And answering still works (analysis grounding unaffected).
+        stub = StubLLM(json.dumps({"answer": "ok", "sources": ["RD005"]}))
+        out = answer_question(repo, RUN_ID, "hi", llm=stub)
+        assert out["answer"] == "ok"
+    finally:
+        repo.fetch_remediation_records = original
+
+
 def test_answer_returns_question_answer_sources(repo):
     _seed(repo)
     stub = StubLLM(json.dumps({

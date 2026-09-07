@@ -60,10 +60,27 @@ def query_postgis(repo: Repository, sql: str,
 query_postgis_readonly = query_postgis
 
 
-# ── 5. get_rule_definition ──────────────────────────────────────────────────
+# ── 5. get_spatial_measurements ─────────────────────────────────────────────
+def get_spatial_measurements(repo: Repository, layer_name: str,
+                             feature_id: str,
+                             other_feature_id: Optional[str] = None
+                             ) -> Optional[dict]:
+    """Return measurable spatial facts for ONE feature, computed by PostGIS
+    (never invented): geometry type, SRID, length (m), area (m²), vertex
+    count, centroid, bounding box, validity. When `other_feature_id` is
+    given, relationship facts are included: distance (m), intersection,
+    overlap area (m²). Inapplicable values are None (a LineString has no
+    area). Returns None when the feature does not exist."""
+    m = repo.fetch_spatial_measurements(layer_name, [feature_id],
+                                        other_feature_id=other_feature_id)
+    return m.get(feature_id)
+
+
+# ── 6. get_rule_definition ──────────────────────────────────────────────────
 def get_rule_definition(rule_id: str) -> Optional[dict]:
     """Return the maintainable definition for a rule (description, baseline
-    severity, deterministic vs heuristic, human-review flag)."""
+    severity, deterministic vs heuristic, human-review flag, remediation
+    policy fields)."""
     rd: Optional[RuleDefinition] = get_rule(rule_id)
     return rd.model_dump() if rd else None
 
@@ -78,6 +95,7 @@ TOOL_REGISTRY: dict[str, object] = {
     "get_feature_context": get_feature_context,
     "get_related_features": get_related_features,
     "query_postgis_readonly": query_postgis_readonly,
+    "get_spatial_measurements": get_spatial_measurements,
     "get_rule_definition": get_rule_definition,
 }
 
@@ -97,6 +115,9 @@ def tool_descriptions() -> list[dict]:
         {"name": "query_postgis_readonly",
          "description": _first_line(query_postgis.__doc__),
          "args": ["sql", "params?"]},
+        {"name": "get_spatial_measurements",
+         "description": _first_line(get_spatial_measurements.__doc__),
+         "args": ["layer_name", "feature_id", "other_feature_id?"]},
         {"name": "get_rule_definition",
          "description": _first_line(get_rule_definition.__doc__),
          "args": ["rule_id"]},
