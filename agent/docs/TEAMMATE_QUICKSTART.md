@@ -40,9 +40,13 @@ docker run -d --name meyaar-postgis -e POSTGRES_DB=meyaar_db \
   -e POSTGRES_HOST_AUTH_METHOD=*** -p 5432:5432 --restart unless-stopped \
   postgis/postgis:16-3.4
 
-# create the agent's table (once):
+# create the agent's tables (once — analysis, remediation audit, run summary):
 docker exec -i meyaar-postgis psql -U postgres -d meyaar_db \
   < agent/schema/agent_error_analysis.sql
+docker exec -i meyaar-postgis psql -U postgres -d meyaar_db \
+  < agent/schema/agent_remediation_actions.sql
+docker exec -i meyaar-postgis psql -U postgres -d meyaar_db \
+  < agent/schema/agent_run_summaries.sql
 ```
 
 ## 3. LLM key (needed for chat / LLM explanations)
@@ -62,6 +66,12 @@ Verify: `agent/.venv/bin/python -c "from agent.core.config import settings; prin
 bash agent/scripts/live_test.sh
 # prints fresh run ids after analyzing roads + buildings
 ```
+Prefer a remediation demo instead (auto-fix + human-review + audit in one)?
+```bash
+bash agent/scripts/live_remediation_demo.sh
+# reseeds buildings -> engine run -> agent analyze -> prints remediation audit
+# (BLD003 spike auto-FIXED, BLD003 bowtie refused+rolled back, rest human-review)
+```
 Or manual (see docs/live-testing.md). Then:
 ```bash
 export MEYAAR_DATABASE_URL="postgresql+psycopg2://postgres@localhost:5432/meyaar_db"
@@ -72,11 +82,18 @@ agent/.venv/bin/python -m agent.cli chat <run_id> --ask "What should I fix first
 ## 5. Run the UI + API
 
 ```bash
-agent/.venv/bin/uvicorn agent.api.app:app --reload     # http://localhost:8000/
+# standalone (local dev; MEYAAR_DEV_NO_AUTH=*** skips the backend login layer):
+MEYAAR_DEV_NO_AUTH=1 agent/.venv/bin/uvicorn agent.api.app:app --reload
+
+# or the production backend app (login + teams + run access):
+agent/.venv/bin/uvicorn src.api.main:app --reload
 ```
-- http://localhost:8000/  → chat UI (paste a run UUID → Analyze run → Ask; 🎤 voice, 🔊 read-aloud)
-- http://localhost:8000/docs → OpenAPI docs
+- http://localhost:8000/  → chat UI (paste a run UUID → Analyze run → Ask; 🎤 voice, 🔊, read-aloud)
+- http://localhost:8000/docs → OpenAPI docs (analyze / analysis / remediation / chat)
 - agent/api/openapi.json → machine-readable API contract
+- After an analyze run: GET `/api/validation/{run_id}/remediation` shows the
+  review queue (auto-fixed / needs human / no action / failed), and the
+  analysis `summary.narrative` holds the per-run executive summary.
 
 ### Voice on Windows / other machines
 - 🔊 read-aloud + text chat: works anywhere (browser TTS).
@@ -95,7 +112,7 @@ Your container is local. For one shared set of runs, either:
 ## 6. Sanity checks
 
 ```bash
-MEYAAR_ALLOW_LLM=false agent/.venv/bin/python -m pytest agent/tests -q   # 63 passed, no DB needed
+MEYAAR_ALLOW_LLM=false agent/.venv/bin/python -m pytest agent/tests -q   # 96 passed, no DB needed
 docker exec meyaar-postgis pg_isready -U postgres -h localhost           # DB up
 ```
 

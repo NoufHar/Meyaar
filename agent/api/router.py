@@ -14,7 +14,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, UUID4
 
 from agent.chat import answer_question
-from agent.core.models import AnalyzeResponse, AnalysisListResponse, RunSummary
+from agent.core.models import (
+    AnalyzeResponse,
+    AnalysisListResponse,
+    RemediationListResponse,
+    RunSummary,
+)
 from agent.db.base import Repository
 from agent.graph.builder import build_summary_model, run_analysis
 from src.api.auth import current_user, database_engine, ensure_app_tables, require_run_access
@@ -77,11 +82,37 @@ def get_analysis(run_id: UUID4, repo: Repository = Depends(get_repository), user
     results = repo.fetch_results(str(run_id))
     summary = repo.build_summary(results, analyses)
     summary["priority_actions"] = repo.priority_actions(summary)
+    # Attach the persisted executive narrative (written by the summarize node).
+    try:
+        stored = repo.fetch_run_summary(str(run_id))
+        if stored:
+            summary["narrative"] = stored.get("narrative")
+    except Exception:
+        pass   # table may be absent on older DBs — summary still works
     return AnalysisListResponse(
         run_id=str(run_id),
         summary=build_summary_model(str(run_id), summary),
         analyses=analyses,
     )
+
+
+@router.get("/validation/{run_id}/remediation",
+            response_model=RemediationListResponse,
+            summary="Retrieve remediation/audit records for a validation run")
+def get_remediation(run_id: UUID4, repo: Repository = Depends(get_repository), user: dict = Depends(current_user)):
+    """Remediation decisions + audit for a run. The dashboard can
+    distinguish: action=auto_fix/status=applied (automatically fixed),
+    action=human_review/status=pending_review (needs a reviewer),
+    action=no_action/status=none (nothing to do), status=failed (rolled back).
+    Records are created by POST /api/validation/{run_id}/analyze."""
+    with database_engine().begin() as connection:
+        ensure_app_tables(connection)
+        require_run_access(connection, user, str(run_id))
+    try:
+        records = repo.fetch_remediation_records(str(run_id))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"remediation fetch failed: {exc}")
+    return RemediationListResponse(run_id=str(run_id), remediation=records)
 
 
 @router.post("/validation/{run_id}/chat",

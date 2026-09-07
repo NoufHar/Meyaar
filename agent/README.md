@@ -10,9 +10,13 @@ this agent interprets.
 > AI Agent = **Interpretation, reasoning, prioritization, explanation,
 > contextual analysis, and recommendations**
 
-The agent NEVER replaces PostGIS logic, never runs destructive SQL, and never
-modifies production GIS tables. Its only write target is its own
-`public.agent_error_analysis` table (schema in `agent/schema/`).
+The agent NEVER replaces PostGIS logic and never runs free-form/destructive
+SQL. Writes are limited to:
+  1. its own tables — `public.agent_error_analysis` and
+     `public.agent_remediation_actions` (schemas in `agent/schema/`), and
+  2. a single whitelisted remediation operation `apply_geometry_repair`
+     (transactional `ST_MakeValid`, policy-approved per rule in
+     `rules/registry.json`) — see `agent/docs/REMEDIATION.md`.
 
 ---
 
@@ -22,13 +26,14 @@ modifies production GIS tables. Its only write target is its own
 validation_results
       │  fetch_results(run_id)
       ▼
- load ──(results?)──► prepare/groups ──► analyze ──► validate ──► save ──► summarize ──► END
-      │                    │                │            │           │
-      │                    │  bulk feature  │ LLM per     repair     upsert to
-      │                    │  context via   │ (layer,     status/     agent_error_
-      │                    │  repository    │ rule) or    schema      analysis
-      │                    │                │ template
-      └──── no results ───► summarize (zero summary) ─────────────────────► END
+ load ──(results?)──► prepare/groups ──► analyze ──► validate ──► remediate ──► save ──► summarize ──► END
+      │                    │                │            │             │          │
+      │                    │  bulk feature  │ LLM per    repair        policy +   upsert to
+      │                    │  context via   │ (layer,    status/       whitelisted agent_error_
+      │                    │  repository    │ rule) or   schema        execution   analysis +
+      │                    │                │ template                           agent_remediation_
+      │                    │                │                                    actions
+      └──── no results ───► summarize (zero summary) ───────────────────────────► END
 ```
 
 - **load** — `Repository.fetch_results(run_id)` from `public.validation_results`
@@ -36,13 +41,21 @@ validation_results
   context for every referenced feature in one batched query (never full
   geometries) via `get_related_features`
 - **analyze** — one call per group (LLM when configured, deterministic
-  template otherwise — same JSON schema, both paths)
+  template otherwise — same JSON schema, both paths). The LLM may add an
+  advisory `remediation_intent`; it never decides execution.
 - **validate** — enforces invariants: heuristic rules (RD001/RD002) can never
   be anything but `candidate` + `human_review_required=true`; severities are
   copied from the engine untouched; malformed LLM rows are repaired
+- **remediate** — deterministic decision per result from the rule registry
+  (auto_fix / human_review / no_action); approved auto-fixes execute through
+  the single whitelisted repository method; every decision is audited to
+  `agent_remediation_actions` (see `agent/docs/REMEDIATION.md`)
 - **save** — idempotent upsert (`ON CONFLICT (run_id, result_id)`)
 - **summarize** — run-level rollup: totals by severity/layer/rule, most common
-  error, priority actions (critical first, heuristic review last)
+  error, priority actions (critical first, heuristic review last), plus a
+  persisted executive narrative (`agent_run_summaries`): LLM-written when a
+  key is configured, deterministic template otherwise — returned in the
+  analysis summary as `summary.narrative`
 
 ## Classification rules
 
@@ -68,8 +81,15 @@ no details and no feature context, the analysis returns
 `status: insufficient_context` (heuristics stay `candidate` but are flagged)
 instead of hallucinating.
 
+The "Human review" column above is the *analysis* flag (heuristics always
+candidate). Remediation is a separate, stricter layer: even a `confirmed`
+deterministic error is auto-fixed only when the registry says
+`auto_fix_allowed` (currently just BLD003/RD004 geometry repair) — everything
+else lands in the human-review queue via `agent_remediation_actions`. See
+`docs/REMEDIATION.md`.
+
 Rule semantics live in `agent/rules/registry.json` (maintainable config), not
-inside the LLM prompt.
+inside the LLM prompt — including the remediation policy fields.
 
 ## Agent tools
 
@@ -83,7 +103,11 @@ All tools are plain typed callables against the injected `Repository`
 4. `query_postgis(sql, params?)` — read-only; guarded by
    `agent/tools/sql_guard.py` AND by `default_transaction_read_only=on` on the
    engine (defense in depth)
-5. `get_rule_definition(rule_id)` — from `rules/registry.json`
+5. `get_spatial_measurements(layer_name, feature_id, other_feature_id?)` —
+   PostGIS-computed facts: length_m, area_m2, vertex_count, centroid, bbox,
+   plus distance/intersection/overlap against another feature
+6. `get_rule_definition(rule_id)` — from `rules/registry.json` (incl.
+   remediation policy fields)
 
 ## Package layout
 
@@ -92,25 +116,31 @@ agent/
 ├── core/        config (env), LLM factory, pydantic models
 ├── rules/       registry.json + loader (rule-definition system)
 ├── db/          Repository interface + Postgres + InMemory implementations
-├── tools/       the five agent tools + read-only SQL guard
+├── tools/       the agent tools + read-only SQL guard
 ├── graph/       LangGraph: state, nodes, builder
+├── remediation/ deterministic policy + decision service (auto_fix / review)
 ├── api/         FastAPI router + standalone app + openapi.json contract
 ├── chat.py      grounded chat service (text + sources)
 ├── voice.py     thin TTS/STT integration (macOS say + browser APIs)
-├── schema/      agent_error_analysis.sql (DDL)
+├── schema/      agent_error_analysis.sql + agent_remediation_actions.sql
+│                + agent_run_summaries.sql (DDL)
 ├── cli.py       terminal runner
-└── tests/       fixtures + rule/tool/graph/API/chat/voice tests
+└── tests/       fixtures + rule/tool/graph/API/chat/voice/remediation tests
 ```
 
 Docs: `docs/INTEGRATION.md` (for backend/UI colleagues, incl. OpenAPI file),
-`docs/testing.md`, `docs/live-testing.md`, API spec `api/openapi.json`,
+`docs/REMEDIATION.md` (trainer-requested extension: measurements tool,
+remediation policy, audit, scenarios), `docs/testing.md`,
+`docs/live-testing.md`, API spec `api/openapi.json`,
 live response sample `docs/_sample_response.json`.
 
 ## Database setup
 
 ```bash
-# 1. create the analysis table (run against meyaar_db with postgis)
+# 1. create the agent tables (run against meyaar_db with postgis)
 psql -d meyaar_db -f agent/schema/agent_error_analysis.sql
+psql -d meyaar_db -f agent/schema/agent_remediation_actions.sql
+psql -d meyaar_db -f agent/schema/agent_run_summaries.sql
 
 # 2. connection settings (defaults match src/insertion/database.py)
 cp agent/.env.example agent/.env   # edit MEYAAR_DATABASE_URL if needed
@@ -130,8 +160,9 @@ agent/.venv/bin/python -m agent.cli analyze <run_uuid>
 
 # API (standalone during development):
 agent/.venv/bin/uvicorn agent.api.app:app --reload
-#   POST /api/validation/{run_id}/analyze
+#   POST /api/validation/{run_id}/analyze        (analysis + remediation)
 #   GET  /api/validation/{run_id}/analysis
+#   GET  /api/validation/{run_id}/remediation    (audit / review queue)
 #   POST /api/validation/{run_id}/chat        {"question": "why is BLD_102 flagged?"}
 
 # Chat about a run's engine results (needs MEYAAR_LLM_API_KEY):
@@ -158,9 +189,11 @@ runs fully deterministically — same JSON schema, zero API calls, CI-safe.
 
 ```bash
 agent/.venv/bin/python -m pytest agent/tests -q
-# 48 tests: registry semantics for all 13 rules, tool + SQL-guard behaviour,
+# 96 tests: registry semantics for all 13 rules, tool + SQL-guard behaviour,
 # full-run analysis, heuristic classification, missing context,
-# DB failures, malformed/lying LLM output, API endpoints.
+# DB failures, malformed/lying LLM output, API endpoints, spatial
+# measurements, remediation policy + the 9 trainer scenarios, and the
+# persisted per-run executive narrative.
 ```
 
 ## Reliability guarantees
@@ -178,5 +211,8 @@ agent/.venv/bin/python -m pytest agent/tests -q
 - RD001/RD002 5 m tolerance semantics and false-positive rates
 - exact rule descriptions/recommendations in `registry.json` should be
   reviewed against the final GeoSA selections by the rule-engine owner
-- `agent_error_analysis` table needs to be created on the shared DB
-- live PostGIS integration test once `meyaar_db` is reachable
+- remediation executes on the *source* layer features (roads/buildings) —
+  confirm with the team when repairs should run on the shared DB (audit
+  table records everything)
+- GIS rules were not exercised live (config tables empty); policy covered by
+  unit tests

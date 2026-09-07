@@ -23,6 +23,22 @@
               "format": "uuid4",
               "title": "Run Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -66,6 +82,22 @@
               "format": "uuid4",
               "title": "Run Id"
             }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
           }
         ],
         "responses": {
@@ -75,6 +107,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AnalysisListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/validation/{run_id}/remediation": {
+      "get": {
+        "tags": [
+          "validation-analysis"
+        ],
+        "summary": "Retrieve remediation/audit records for a validation run",
+        "description": "Remediation decisions + audit for a run. The dashboard can\ndistinguish: action=auto_fix/status=applied (automatically fixed),\naction=human_review/status=pending_review (needs a reviewer),\naction=no_action/status=none (nothing to do), status=failed (rolled back).\nRecords are created by POST /api/validation/{run_id}/analyze.",
+        "operationId": "get_remediation_api_validation__run_id__remediation_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid4",
+              "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemediationListResponse"
                 }
               }
             }
@@ -109,6 +201,22 @@
               "type": "string",
               "format": "uuid4",
               "title": "Run Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -361,6 +469,153 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "RemediationListResponse": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "remediation": {
+            "items": {
+              "$ref": "#/components/schemas/RemediationRecord"
+            },
+            "type": "array",
+            "title": "Remediation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id"
+        ],
+        "title": "RemediationListResponse",
+        "description": "GET /api/validation/{run_id}/remediation body."
+      },
+      "RemediationRecord": {
+        "properties": {
+          "remediation_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation Id"
+          },
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "result_id": {
+            "type": "integer",
+            "title": "Result Id"
+          },
+          "layer_name": {
+            "type": "string",
+            "title": "Layer Name"
+          },
+          "feature_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feature Id"
+          },
+          "rule_id": {
+            "type": "string",
+            "title": "Rule Id"
+          },
+          "action": {
+            "type": "string",
+            "pattern": "^(auto_fix|human_review|no_action)$",
+            "title": "Action"
+          },
+          "remediation_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remediation Type"
+          },
+          "status": {
+            "type": "string",
+            "pattern": "^(applied|failed|pending_review|none)$",
+            "title": "Status"
+          },
+          "issue": {
+            "type": "string",
+            "title": "Issue",
+            "default": ""
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          },
+          "recommended_action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommended Action"
+          },
+          "before_state": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Before State"
+          },
+          "after_state": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "After State"
+          },
+          "agent_model": {
+            "type": "string",
+            "title": "Agent Model",
+            "default": ""
+          },
+          "human_review_required": {
+            "type": "boolean",
+            "title": "Human Review Required",
+            "default": false
+          },
+          "executed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Executed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "result_id",
+          "layer_name",
+          "rule_id",
+          "action",
+          "status"
+        ],
+        "title": "RemediationRecord",
+        "description": "Audit row for public.agent_remediation_actions.\n\nOne record per (run_id, result_id). Kept JSON-friendly; before/after\nstates are dicts (JSONB in PostgreSQL). The dashboard can distinguish:\naction=auto_fix + status=applied  -> automatically fixed\naction=human_review + status=pending_review -> requires human reviewer\naction=no_action + status=none    -> nothing to do\naction=auto_fix + status=failed   -> execution failed (logged)"
+      },
       "RunSummary": {
         "properties": {
           "run_id": {
@@ -423,6 +678,17 @@
             },
             "type": "object",
             "title": "Counts By Layer"
+          },
+          "narrative": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Narrative"
           }
         },
         "type": "object",

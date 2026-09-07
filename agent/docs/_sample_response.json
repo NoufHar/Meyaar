@@ -1,85 +1,135 @@
 {
-  "run_id": "316525f7-a7e3-43bd-81a5-7f442397dd1f",
+  "run_id": "3dd0060f-086c-4789-a9d5-bb22e37fe9cc",
   "summary": {
-    "total_errors": 9,
+    "run_id": "3dd0060f-086c-4789-a9d5-bb22e37fe9cc",
+    "total_errors": 6,
     "critical_errors": 1,
-    "high_errors": 6,
+    "high_errors": 3,
     "medium_errors": 2,
     "low_errors": 0,
-    "most_common_error": "Road Undershoot",
-    "counts_by_rule": {
-      "RD001": 2,
-      "RD002": 4,
-      "RD003": 2,
-      "RD005": 1
-    },
-    "counts_by_layer": {
-      "roads": 9
-    },
-    "human_review_pending": 6,
-    "analyzed": 9,
+    "most_common_error": "Duplicate Buildings",
     "priority_actions": [
       "Resolve critical errors first (missing geometry / CRS / coordinates)",
-      "Fix high-severity errors before re-running validation",
-      "Review heuristic topology candidates flagged for human review"
-    ]
+      "Fix high-severity errors before re-running validation"
+    ],
+    "counts_by_rule": {
+      "BLD001": 1,
+      "BLD002": 2,
+      "BLD003": 2,
+      "BLD004": 1
+    },
+    "counts_by_layer": {
+      "buildings": 6
+    },
+    "narrative": "The validation run surfaced six total errors against the buildings layer, distributed across four severity tiers: one critical, three high, two medium, and no low-severity findings. The error groups are: one critical Missing Geometry case, one high-severity Building Overlap, two high-severity Invalid Geometry instances, and two medium-severity Duplicate Buildings. Duplicate Buildings is the most common error group in this run, appearing twice, and the Invalid Geometry group is arguably the most important to address because both of its instances carry high severity alongside the single overlap case. On remediation, the system auto-fixed one of the six errors, one fix failed, four are pending human review, and none were left without any action taken. The recommended next step is to clear the critical Missing Geometry error first, then work through the three high-severity findings before re-running validation."
   },
   "analyses": [
     {
-      "result_id": 120,
-      "run_id": "316525f7-a7e3-43bd-81a5-7f442397dd1f",
-      "layer_name": "roads",
-      "feature_id": "RD_INJ_OVER",
-      "rule_id": "RD001",
-      "error_type": "Road Overshoot",
+      "result_id": 142,
+      "run_id": "3dd0060f-086c-4789-a9d5-bb22e37fe9cc",
+      "layer_name": "buildings",
+      "feature_id": "BLD_INJ_A",
+      "rule_id": "BLD001",
+      "error_type": "Building Overlap",
       "severity": "high",
-      "status": "candidate",
-      "explanation": "Heuristic topology candidate for road overshoot: road RD_INJ_OVER appears to continue approximately 0.40 m past the intersection with road RD_INJ_OVER_B, which is well within the 5 m tolerance used by rule RD001.",
-      "cause": "The RD_INJ_OVER linestring (spanning roughly x: 46.69804–46.70004 at y ≈ 24.7) extends beyond the junction with RD_INJ_OVER_B (a north–south segment near x ≈ 46.700036). This pattern is consistent with a line that was not trimmed to the true intersection vertex during digitization or conflation, producing a small dangling tail past the cross road. At 0.40 m the overshoot is minor but still a topology signal.",
-      "recommendation": "Visually confirm the junction at the RD_INJ_OVER / RD_INJ_OVER_B crossing (centroid vicinity: 46.69904, 24.7). If a real overshoot is visible, trim the endpoint of RD_INJ_OVER to the exact intersection with RD_INJ_OVER_B. If the continuation is intentional (e.g., a fork, parallel lane, or overpass/underpass representation), mark this candidate as a false positive and document the justification.",
-      "human_review_required": true,
+      "status": "confirmed",
+      "explanation": "Building Overlap detected on buildings feature BLD_INJ_A by PostGIS rule BLD001 (severity: high). Rule engine details: Building overlaps building BLD_INJ_B. Overlap area = 28.04 m². Feature context: POLYGON, SRID 4326, centroid POINT(46.70005 24.60005).",
+      "cause": "Rule BLD001 (Building Overlap): Positive-area overlap between two building polygon footprints detected by PostGIS.",
+      "recommendation": "Compare both footprints against the survey/plan source and remove the unintended overlap; if a shared wall or valid adjacency exists, snap the boundaries so polygons only touch, never overlap.",
+      "human_review_required": false,
       "related_features": [
-        "RD_INJ_OVER_B"
+        "BLD_INJ_A",
+        "BLD_INJ_B"
       ],
       "insufficient_context": false,
       "agent_model": "minimax/minimax-m3:free"
     },
     {
-      "result_id": 121,
-      "run_id": "316525f7-a7e3-43bd-81a5-7f442397dd1f",
-      "layer_name": "roads",
-      "feature_id": "RD_INJ_UNDER",
-      "rule_id": "RD001",
-      "error_type": "Road Overshoot",
-      "severity": "high",
-      "status": "candidate",
-      "explanation": "Heuristic topology candidate for road overshoot: road RD_INJ_UNDER continues approximately 4.05 m past the intersection with road RD_INJ_UNDER_D, which falls within the 5 m tolerance defined by rule RD001.",
-      "cause": "The RD_INJ_UNDER linestring (spanning roughly x: 46.70204–46.70404 at y ≈ 24.701) projects past the junction with RD_INJ_UNDER_D (a short north–south segment near x ≈ 46.704). This is consistent with an endpoint that was not snapped to the cross road, leaving a ~4 m tail. Because the magnitude is close to the tolerance limit, distinguishing a true overshoot from intentional geometry (e.g., an underpass, lane split, or dual carriageway return) requires visual inspection.",
-      "recommendation": "Visually verify the junction at the RD_INJ_UNDER / RD_INJ_UNDER_D crossing (centroid vicinity: 46.70304, 24.701). If confirmed as an overshoot, trim the dangling end of RD_INJ_UNDER to the precise intersection with RD_INJ_UNDER_D and re-run the RD001 check. If the geometry represents a legitimate crossing configuration (such as a grade-separated underpass, which the feature naming hints at), mark this candidate as a false positive with documented evidence.",
-      "human_review_required": true,
+      "result_id": 140,
+      "run_id": "3dd0060f-086c-4789-a9d5-bb22e37fe9cc",
+      "layer_name": "buildings",
+      "feature_id": "BLDG_0538831",
+      "rule_id": "BLD002",
+      "error_type": "Duplicate Buildings",
+      "severity": "medium",
+      "status": "confirmed",
+      "explanation": "Building BLDG_0538831 has an exact EWKB geometry match with another building row (duplicate group size = 2). Both features share identical centroid POINT(46.68807952979557 24.81435469064251) and identical bounding box (x: 46.68789098464189–46.68826781602978, y: 24.81411059701945–24.81461233415297), confirming a byte-for-byte geometry duplication rather than a near-coincidence.",
+      "cause": "Likely duplicate ingestion: the same polygon was inserted twice (e.g., duplicate import of a buildings dataset, copy-paste during ETL, or overlapping merge from two source layers) resulting in two distinct feature_ids referencing the same physical geometry.",
+      "recommendation": "Identify the authoritative row (typically the one with the most complete or current attributes — BLDG_0538831 in this case). After confirming which row is authoritative, merge any unique attributes from the duplicate into it and delete the redundant row. Do not proceed with deletion until attributes are compared and a human reviewer confirms the authoritative record.",
+      "human_review_required": false,
       "related_features": [
-        "RD_INJ_UNDER_D"
+        "{'feature_id': 'BLD_INJ_DUP', 'layer_name': 'buildings', 'relationship': 'duplicate (identical EWKB geometry; same centroid and bbox)', 'geometry_type': 'POLYGON', 'srid': 4326, 'centroid': 'POINT(46.68807952979557 24.81435469064251)'}"
       ],
       "insufficient_context": false,
       "agent_model": "minimax/minimax-m3:free"
     },
     {
-      "result_id": 116,
-      "run_id": "316525f7-a7e3-43bd-81a5-7f442397dd1f",
-      "layer_name": "roads",
-      "feature_id": "RD_INJ_INVALID",
-      "rule_id": "RD002",
-      "error_type": "Road Undershoot",
-      "severity": "high",
-      "status": "candidate",
-      "explanation": "Road RD_INJ_INVALID has a start endpoint that stops 3.64 m short of road RD_INJ_OVER_B. The geometry context shows RD_INJ_INVALID occupies a small bounding box near (46.70006, 24.70005), while RD_INJ_OVER_B runs vertically near longitude 46.700036 — consistent with the start of RD_INJ_INVALID falling just short of reaching the vertical road. Because this is a heuristic topology check within a 5 m tolerance, visual confirmation is needed to determine whether the gap is a true undershoot or an intentional terminus.",
-      "cause": "Heuristic undershoot candidate: the start endpoint of RD_INJ_INVALID falls within the 5 m tolerance of RD_INJ_OVER_B but does not touch it, indicating a possible topology gap at the junction.",
-      "recommendation": "Visually verify the gap at the start of RD_INJ_INVALID against RD_INJ_OVER_B. If a junction is intended, extend the line endpoint to snap to RD_INJ_OVER_B; otherwise mark as false positive.",
-      "human_review_required": true,
+      "result_id": 141,
+      "run_id": "3dd0060f-086c-4789-a9d5-bb22e37fe9cc",
+      "layer_name": "buildings",
+      "feature_id": "BLD_INJ_DUP",
+      "rule_id": "BLD002",
+      "error_type": "Duplicate Buildings",
+      "severity": "medium",
+      "status": "confirmed",
+      "explanation": "Building BLD_INJ_DUP has an exact EWKB geometry match with BLDG_0538831 (duplicate group size = 2). Both features share identical centroid POINT(46.68807952979557 24.81435469064251) and identical bounding box, confirming a true geometry duplicate rather than a spatial near-coincidence.",
+      "cause": "Likely duplicate ingestion: the same polygon was inserted twice (e.g., duplicate import of a buildings dataset, copy-paste during ETL, or overlapping merge from two source layers) resulting in two distinct feature_ids referencing the same physical geometry.",
+      "recommendation": "Compare attributes between BLD_INJ_DUP and BLDG_0538831 to determine which is authoritative. Once confirmed, merge any unique attributes from BLD_INJ_DUP into the authoritative row and delete BLD_INJ_DUP. Hold off on deletion until human review verifies which record should be retained.",
+      "human_review_required": false,
       "related_features": [
-        "RD_INJ_INVALID",
-        "RD_INJ_OVER_B"
+        "{'feature_id': 'BLDG_0538831', 'layer_name': 'buildings', 'relationship': 'duplicate (identical EWKB geometry; same centroid and bbox)', 'geometry_type': 'POLYGON', 'srid': 4326, 'centroid': 'POINT(46.68807952979557 24.81435469064251)'}"
       ],
+      "insufficient_context": false,
+      "agent_model": "minimax/minimax-m3:free"
+    },
+    {
+      "result_id": 138,
+      "run_id": "3dd0060f-086c-4789-a9d5-bb22e37fe9cc",
+      "layer_name": "buildings",
+      "feature_id": "BLD_INJ_BOW",
+      "rule_id": "BLD003",
+      "error_type": "Invalid Geometry",
+      "severity": "high",
+      "status": "confirmed",
+      "explanation": "The building polygon 'BLD_INJ_BOW' failed PostGIS ST_IsValid. The reported failure is a self-intersection at coordinate [46.70025 24.60005], which sits essentially at the polygon's centroid. The geometry type is POLYGON in SRID 4326 with an extremely small footprint (~0.0001° in both x and y), consistent with a 'bowtie' style invalidity where the ring crosses itself.",
+      "cause": "Self-intersecting polygon (bowtie) — most likely caused by incorrect ring digitization, a duplicated/out-of-order vertex, or snapping artifacts during data capture/editing that produced overlapping edges in the building footprint.",
+      "recommendation": "Apply ST_MakeValid inside a transaction to rebuild the footprint, then re-run ST_IsValid and compare the before/after geometry. If the repaired polygon no longer represents the intended building, correct the source survey/feature and re-ingest.",
+      "human_review_required": false,
+      "related_features": [],
+      "insufficient_context": false,
+      "agent_model": "minimax/minimax-m3:free"
+    },
+    {
+      "result_id": 139,
+      "run_id": "3dd0060f-086c-4789-a9d5-bb22e37fe9cc",
+      "layer_name": "buildings",
+      "feature_id": "BLD_INJ_SPK",
+      "rule_id": "BLD003",
+      "error_type": "Invalid Geometry",
+      "severity": "high",
+      "status": "confirmed",
+      "explanation": "The building polygon 'BLD_INJ_SPK' failed PostGIS ST_IsValid. The reported failure is a self-intersection at coordinate [46.7004 24.6002], located at the upper x-range and upper y-range corner of the polygon bounds (x_max=46.7004, y_max=46.7004 — note y_max reported as 24.6004 with the self-intersection at y=24.6002, i.e., within the bounding box). The geometry type is POLYGON in SRID 4326 and the footprint is very small (~0.0004° × 0.0004°), consistent with a 'spike' style invalidity where an edge re-enters or touches itself.",
+      "cause": "Self-intersecting polygon (spike) — typically produced by a dangling/overshoot vertex, a near-zero-width sliver, or mis-snapped vertices that cause one ring edge to cross another in the building footprint.",
+      "recommendation": "Apply ST_MakeValid inside a transaction to rebuild the footprint, then re-run ST_IsValid and compare the before/after geometry. If the repaired polygon does not represent the intended building, correct the source data and re-ingest.",
+      "human_review_required": false,
+      "related_features": [],
+      "insufficient_context": false,
+      "agent_model": "minimax/minimax-m3:free"
+    },
+    {
+      "result_id": 137,
+      "run_id": "3dd0060f-086c-4789-a9d5-bb22e37fe9cc",
+      "layer_name": "buildings",
+      "feature_id": "BLD_INJ_NULL",
+      "rule_id": "BLD004",
+      "error_type": "Missing Geometry",
+      "severity": "critical",
+      "status": "confirmed",
+      "explanation": "Missing Geometry detected on buildings feature BLD_INJ_NULL by PostGIS rule BLD004 (severity: critical). Rule engine details: Building geometry is NULL or empty. Feature context: None, SRID None, centroid None.",
+      "cause": "Rule BLD004 (Missing Geometry): Building row has NULL or empty geometry.",
+      "recommendation": "Provide the missing footprint geometry from the authoritative source, or remove the row if it is not a building.",
+      "human_review_required": false,
+      "related_features": [],
       "insufficient_context": false,
       "agent_model": "minimax/minimax-m3:free"
     }
