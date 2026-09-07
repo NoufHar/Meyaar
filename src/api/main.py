@@ -591,7 +591,7 @@ def _ensure_review_table(connection) -> None:
         )
     """))
 
-MAX_IMAGE_SIZE = 25 * 1024 * 1024
+MAX_IMAGE_SIZE = 100 * 1024 * 1024
 
 SUPPORTED_IMAGE_EXTENSIONS = {
     ".jpg",
@@ -803,7 +803,7 @@ async def analyze_uploaded_image(
 
 
 
-MAX_VECTOR_SIZE = 100 * 1024 * 1024
+MAX_VECTOR_SIZE = 500 * 1024 * 1024
 
 
 @app.post(

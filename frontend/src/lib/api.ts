@@ -77,31 +77,18 @@ export async function checkBackendHealth(): Promise<boolean> {
 
 export async function analyzeMapImage(
   file: File,
+  onProgress?: (percent: number) => void,
 ): Promise<VisionAnalysisResponse> {
   const formData = new FormData();
-
   formData.append("file", file);
-
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}/images/analyze`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: formData,
-    });
-  } catch {
-    throw new Error("Cannot connect to the backend. Make sure FastAPI is running on port 8000.");
-  }
-
-  return parseResponse<VisionAnalysisResponse>(
-    response,
-  );
+  return uploadWithProgress<VisionAnalysisResponse>(`${API_BASE_URL}/images/analyze`, formData, onProgress);
 }
 
 
 export async function processVectorFile(
   file: File,
   layerType?: LayerType,
+  onProgress?: (percent: number) => void,
 ): Promise<VectorProcessingResponse> {
   const formData = new FormData();
 
@@ -111,20 +98,33 @@ export async function processVectorFile(
     formData.append("layer_type", layerType);
   }
 
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}/vectors/process`, {
-      method: "POST",
-      headers: authHeaders(),
-      body: formData,
-    });
-  } catch {
-    throw new Error("Cannot connect to the backend. Make sure FastAPI and PostGIS are running.");
-  }
+  return uploadWithProgress<VectorProcessingResponse>(`${API_BASE_URL}/vectors/process`, formData, onProgress);
+}
 
-  return parseResponse<VectorProcessingResponse>(
-    response,
-  );
+// XMLHttpRequest exposes upload progress events that fetch does not currently provide.
+function uploadWithProgress<T>(url: string, body: FormData, onProgress?: (percent: number) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", url);
+    const token = getAuthToken();
+    if (token) request.setRequestHeader("Authorization", `Bearer ${token}`);
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onerror = () => reject(new Error("Cannot connect to the backend. Make sure FastAPI and PostGIS are running."));
+    request.onload = () => {
+      let payload: unknown;
+      try { payload = JSON.parse(request.responseText); }
+      catch { return reject(new Error(request.responseText || `Request failed with status ${request.status}.`)); }
+      if (request.status < 200 || request.status >= 300) {
+        const detail = typeof payload === "object" && payload && "detail" in payload ? String((payload as { detail: unknown }).detail) : `Request failed with status ${request.status}.`;
+        return reject(new Error(detail));
+      }
+      onProgress?.(100);
+      resolve(payload as T);
+    };
+    request.send(body);
+  });
 }
 
 export async function register(name: string, email: string, password: string): Promise<AuthResponse> {

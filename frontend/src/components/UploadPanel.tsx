@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   analyzeMapImage,
@@ -36,8 +36,10 @@ export default function UploadPanel({
   const [layerType, setLayerType] =
     useState<LayerType>("roads");
 
-  const [file, setFile] =
-    useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const [progress, setProgress] = useState(0);
+  const [currentFile, setCurrentFile] = useState(0);
 
   const [isLoading, setIsLoading] =
     useState(false);
@@ -55,6 +57,8 @@ export default function UploadPanel({
     return () => window.clearInterval(timer);
   }, [isLoading]);
 
+  useEffect(() => { folderInputRef.current?.setAttribute("webkitdirectory", ""); }, []);
+
 
   const acceptedFormats =
     mode === "vector"
@@ -67,31 +71,35 @@ export default function UploadPanel({
   ) {
     event.preventDefault();
 
-    if (!file) {
-      setError("Select a file before starting the analysis.");
+    if (!files.length) {
+      setError("Select a file or folder before starting the analysis.");
       return;
     }
 
-    const sizeLimit = mode === "vector" ? 100 * 1024 * 1024 : 25 * 1024 * 1024;
-    if (file.size > sizeLimit) {
-      setError(`The selected file exceeds the ${mode === "vector" ? 100 : 25} MB limit.`);
+    const sizeLimit = mode === "vector" ? 500 * 1024 * 1024 : 100 * 1024 * 1024;
+    const oversized = files.find((item) => item.size > sizeLimit);
+    if (oversized) {
+      setError(`${oversized.name} exceeds the ${mode === "vector" ? 500 : 100} MB limit.`);
       return;
     }
 
     setElapsedSeconds(0);
     setIsLoading(true);
+    setProgress(0);
+    setCurrentFile(0);
     setError(null);
 
     try {
-      const result =
-        mode === "vector"
-          ? await processVectorFile(
-              file,
-              layerType,
-            )
-          : await analyzeMapImage(file);
-
-      onResult(result, file, mode);
+      let finalResult: ProcessingResult | null = null;
+      for (let index = 0; index < files.length; index += 1) {
+        const selectedFile = files[index];
+        setCurrentFile(index);
+        const updateProgress = (filePercent: number) => setProgress(Math.round(((index + filePercent / 100) / files.length) * 100));
+        finalResult = mode === "vector"
+          ? await processVectorFile(selectedFile, layerType, updateProgress)
+          : await analyzeMapImage(selectedFile, updateProgress);
+      }
+      if (finalResult) onResult(finalResult, files[files.length - 1], mode);
     } catch (requestError) {
       setError(
         requestError instanceof Error
@@ -106,7 +114,8 @@ export default function UploadPanel({
 
   function changeMode(nextMode: UploadMode) {
     setMode(nextMode);
-    setFile(null);
+    setFiles([]);
+    setProgress(0);
     setError(null);
   }
 
@@ -199,8 +208,8 @@ export default function UploadPanel({
             <span className="text-3xl">↑</span>
 
             <span className="mt-3 text-sm font-semibold text-slate-900">
-              {file
-                ? file.name
+              {files.length
+                ? files.length === 1 ? files[0].name : `${files.length} files selected`
                 : t("Choose a file to upload")}
             </span>
 
@@ -210,9 +219,9 @@ export default function UploadPanel({
                 : "PNG, JPG, JPEG, TIFF, or TIF"}
             </span>
 
-            {file && (
+            {files.length > 0 && (
               <span className="mt-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 shadow-sm">
-                {(file.size / 1024 / 1024).toFixed(2)} MB
+                {(files.reduce((total, item) => total + item.size, 0) / 1024 / 1024).toFixed(2)} MB total
               </span>
             )}
           </label>
@@ -222,13 +231,13 @@ export default function UploadPanel({
             type="file"
             accept={acceptedFormats}
             onChange={(event) => {
-              setFile(
-                event.target.files?.[0] ?? null,
-              );
+              setFiles(Array.from(event.target.files ?? []));
               setError(null);
             }}
             className="sr-only"
           />
+          <div className="mt-3 flex items-center justify-center gap-2"><span className="text-xs text-slate-400">or</span><label htmlFor="dataset-folder" className="cursor-pointer rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-xs font-bold text-blue-700 hover:bg-blue-100">Choose a folder</label></div>
+          <input ref={folderInputRef} id="dataset-folder" type="file" multiple accept={acceptedFormats} onChange={(event) => { const supported = Array.from(event.target.files ?? []).filter((item) => acceptedFormats.split(",").some((extension) => item.name.toLowerCase().endsWith(extension))); setFiles(supported); setError(supported.length ? null : "The folder does not contain supported files for this analysis type."); }} className="sr-only" />
         </div>
 
         {error && (
@@ -252,6 +261,8 @@ export default function UploadPanel({
 
         {isLoading && (
           <div className="rounded-xl bg-blue-50 px-4 py-3 text-xs leading-5 text-blue-800" aria-live="polite">
+            <div className="mb-2 flex justify-between font-bold"><span>{files[currentFile]?.name}</span><span>{progress}%</span></div><div className="mb-2 h-2 overflow-hidden rounded-full bg-blue-100"><div className="h-full rounded-full bg-blue-600 transition-[width]" style={{ width: `${progress}%` }} /></div>
+            {files.length > 1 && <p className="mb-1 font-semibold">File {currentFile + 1} of {files.length}</p>}
             {elapsedSeconds < 5
               ? "Uploading and validating the file..."
               : elapsedSeconds < 20
