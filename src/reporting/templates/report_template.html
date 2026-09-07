@@ -375,6 +375,34 @@
             {{ report.quality_assessment_summary }}
         </p>
 
+        {% if validation.quality and validation.quality.quality_results %}
+        <h3>Calculated Quality Measures</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Rule</th>
+                    <th>Quality Element</th>
+                    <th>Measure</th>
+                    <th>Value</th>
+                    <th>Threshold</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in validation.quality.quality_results %}
+                <tr>
+                    <td>{{ row.rule_id }}</td>
+                    <td>{{ row.quality_element }}</td>
+                    <td>{{ row.measure }}</td>
+                    <td>{{ row.value }} {{ row.unit }}</td>
+                    <td>{{ row.threshold if row.threshold is not none else "Not defined" }}</td>
+                    <td>{{ row.status }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
+
     </div>
 
 
@@ -586,6 +614,34 @@
             {{ report.revalidation_improvement }}
         </p>
 
+        {% if validation.revalidation %}
+            {% set comparison = validation.revalidation.comparison if validation.revalidation.comparison else validation.revalidation %}
+            {% if comparison.summary %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Before</th>
+                        <th>After</th>
+                        <th>Resolved</th>
+                        <th>Still Present</th>
+                        <th>New Issues</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ comparison.summary.before }}</td>
+                        <td>{{ comparison.summary.after }}</td>
+                        <td>{{ comparison.summary.resolved }}</td>
+                        <td>{{ comparison.summary.still_present }}</td>
+                        <td>{{ comparison.summary.new_issues }}</td>
+                    </tr>
+                </tbody>
+            </table>
+            {% endif %}
+        {% else %}
+        <div class="note">No re-validation was conducted following the initial assessment.</div>
+        {% endif %}
+
     </div>
 
 
@@ -636,6 +692,29 @@
         <div class="note">
             {{ report.standards_alignment_disclaimer }}
         </div>
+
+        {% if validation.compliance %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Rule</th>
+                    <th>Quality Element</th>
+                    <th>Conformance Status</th>
+                    <th>Evidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in validation.compliance %}
+                <tr>
+                    <td>{{ row.rule_id }}</td>
+                    <td>{{ row.quality_element }}</td>
+                    <td>{{ row.status }}</td>
+                    <td>{{ row.reason }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endif %}
 
         <p>
             Meyaar provides an automated geospatial

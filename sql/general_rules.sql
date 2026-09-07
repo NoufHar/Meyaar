@@ -7,8 +7,9 @@
 
 
 -- ============================================================
--- GIS001 — Missing / Wrong CRS
--- Expected CRS: EPSG:4326
+-- GIS001 — Unsupported Processing CRS
+-- Meyaar internal processing CRS: EPSG:4326
+-- This is an internal requirement, not GeoSA compliance.
 -- ============================================================
 
 DO $$
@@ -57,10 +58,10 @@ BEGIN
             v_layer,
             NULL,
             'GIS001',
-            'Missing/Wrong CRS',
+            'Unsupported Processing CRS',
             'critical',
 
-            'Expected EPSG:'
+            'Meyaar processing requires EPSG:'
                 || expected_srid::text
                 || ', found SRID '
                 || COALESCE(
